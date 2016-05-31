@@ -8,9 +8,11 @@
 #include <syslog.h>
 #include <signal.h>
 #include <getopt.h>
+#include <stdlib.h>
+#include <string.h>
+#include "utils.h"
+#include "appbase.h"
 
-/* This typically runs as a daemon. Tweak this as desired. */
-#define SYSLOG_FACILITY 	LOG_DAEMON
 #define DEFAULT_WAIT_TIME	5
 
 int stop;
@@ -54,34 +56,27 @@ void sighandler(int s)
 	SHOULD_STOP(1);
 }
 
-void fatal(const char *message)
-{
-	syslog(SYSLOG_FACILITY | LOG_ERR, "FATAL ERROR: %s", message);
-	syslog(SYSLOG_FACILITY | LOG_ERR, "Stopping");
-
-	exit(1);
-}
-
 int main(int argc, char **argv)
 {
 	int opt;
 	char *endptr;
 	long int wait_time = DEFAULT_WAIT_TIME;
+	int debug = 0;
+
+	struct sigaction sig;
+
+	struct appbase *ab;
 
 	/* Parse command-line options */
-	struct option opts[] = {
-		.name = "wait",
-		.has_arg = 1,
-		.flag = NULL,
-		.val = 'w'
-	};
-
-	while ((opt = getopt(argc, argv, "w:")) != -1) {
+	while ((opt = getopt(argc, argv, "w:d")) != -1) {
 		switch (opt) {
 		case 'w':
 			wait_time = strtol(optarg, &endptr, 10);
-			if (**optarg || **endptr || wait_time < 0)
+			if (*endptr || wait_time < 0)
 				fatal("Invalid value: -w takes a positive integer");
+			break;
+		case 'd':
+			debug = 1;
 			break;
 		default:
 			break;
@@ -89,7 +84,6 @@ int main(int argc, char **argv)
 	}
 
 	/* Set signal handlers and set stop condition to zero */
-	struct sigaction sig;
 	SHOULD_STOP(0);
 
 	memset(&sig, 0, sizeof(sig));
@@ -105,9 +99,16 @@ int main(int argc, char **argv)
 	sigaction(SIGABRT, &sig, NULL);
 	sigaction(SIGTRAP, &sig, NULL);
 
-	ab = appbase_open(username, password);
+	/* Set up Appbase handle */
+
+	/*ab = appbase_open(app_name, username, password);
 	if (!ab)
 		fatal("Could not log into Appbase");
+
+	if (debug) {
+		appbase_enable_progress(ab, 1);
+		appbase_enable_verbose(ab, 1);
+	}
 
 	camera = uvc_open();
 	if (!camera)
@@ -121,7 +122,7 @@ int main(int argc, char **argv)
 	}
 
 	uvc_close(camera);
-	appbase_close(ab);
+	appbase_close(ab);*/
 
 	return 0;
 }
