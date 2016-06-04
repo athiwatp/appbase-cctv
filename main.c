@@ -5,19 +5,32 @@
  *      Author: ajuaristi <a@juaristi.eus>
  */
 #include <stdio.h>
-#include <syslog.h>
 #include <signal.h>
 #include <getopt.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include "utils.h"
 #include "appbase.h"
+#include "uvc.h"
 
 #define DEFAULT_WAIT_TIME	5
 
 int stop;
 #define SHOULD_STOP(v) (stop = v)
 #define IS_STOPPED()   (stop)
+
+void print_usage_and_exit(const char *name)
+{
+	if (name) {
+		printf("Usage: %s [OPTIONS] <app name> <username> <password>\n"
+				"Options:\n"
+				"    -w secs        Sleep this amount of seconds between shots\n"
+				"    -d             Display debug messages\n",
+				name);
+	}
+	exit(1);
+}
 
 void sighandler(int s)
 {
@@ -48,9 +61,9 @@ void sighandler(int s)
 	}
 
 	if (signame)
-		syslog(SYSLOG_FACILITY | LOG_INFO, "Received %s. Exiting.", signame);
+		fprintf(stderr, "Received %s. Exiting.", signame);
 	else
-		syslog(SYSLOG_FACILITY | LOG_INFO, "Received %d. Exiting.", s);
+		fprintf(stderr, "Received %d. Exiting.", s);
 
 	/* Stop! */
 	SHOULD_STOP(1);
@@ -62,10 +75,11 @@ int main(int argc, char **argv)
 	char *endptr;
 	long int wait_time = DEFAULT_WAIT_TIME;
 	int debug = 0;
-
+	char *app_name, *username, *password;
 	struct sigaction sig;
-
 	struct appbase *ab;
+	struct camera *camera;
+	struct frame *frame;
 
 	/* Parse command-line options */
 	while ((opt = getopt(argc, argv, "w:d")) != -1) {
@@ -73,12 +87,13 @@ int main(int argc, char **argv)
 		case 'w':
 			wait_time = strtol(optarg, &endptr, 10);
 			if (*endptr || wait_time < 0)
-				fatal("Invalid value: -w takes a positive integer");
+				print_usage_and_exit(argv[0]);
 			break;
 		case 'd':
 			debug = 1;
 			break;
 		default:
+			print_usage_and_exit(argv[0]);
 			break;
 		}
 	}
@@ -99,9 +114,17 @@ int main(int argc, char **argv)
 	sigaction(SIGABRT, &sig, NULL);
 	sigaction(SIGTRAP, &sig, NULL);
 
-	/* Set up Appbase handle */
+	/* Set up Appbase handle
+	 * We need the app name, username and password to build the REST URL, and these
+	 * should came now as parameters. We expect optind to point us to the first one.
+	 */
+	if (argc - optind < 3)
+		print_usage_and_exit(argv[0]);
 
-	/*ab = appbase_open(app_name, username, password);
+	ab = appbase_open(
+			argv[optind],		// app name
+			argv[optind + 1],	// username
+			argv[optind + 2]);	// password
 	if (!ab)
 		fatal("Could not log into Appbase");
 
@@ -116,13 +139,16 @@ int main(int argc, char **argv)
 
 	while (!IS_STOPPED()) {
 		frame = uvc_capture_frame();
-		appbase_push_frame(ab, frame);
+		if (!appbase_push_frame(ab, frame->data, frame->length))
+			fprintf(stderr, "ERROR: Could not send frame\n");
+		free(frame);
 
-		wait_for(wait_time);
+		/* sleep(3) should not interfere with our signal handlers, unless we're also handling SIGALRM */
+		sleep(wait_time);
 	}
 
 	uvc_close(camera);
-	appbase_close(ab);*/
+	appbase_close(ab);
 
 	return 0;
 }
