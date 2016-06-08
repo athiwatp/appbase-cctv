@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <linux/videodev2.h>
 #include "utils.h"
 #include "appbase.h"
 #include "uvc.h"
@@ -129,19 +130,38 @@ int main(int argc, char **argv)
 		fatal("Could not log into Appbase");
 
 	if (debug) {
-		appbase_enable_progress(ab, 1);
-		appbase_enable_verbose(ab, 1);
+		appbase_enable_progress(ab, true);
+		appbase_enable_verbose(ab, true);
 	}
 
 	camera = uvc_open();
 	if (!camera)
 		fatal("Could not find any camera for capturing pictures");
 
+	/*
+	 * We'll capture 320x240 images in YUYV format. YUYV encodes each pixel in 2 bytes,
+	 * so the size of the frames will be 320 x 240 x 2 = 153,600 bytes (~153 KB).
+	 * All the frames will have exactly the same size (unless we, at some point, change
+	 * the dimensions or the format), so we can allocate a fixed chunk of memory and re-use it
+	 * for each frame.
+	 *
+	 * Frame format:
+	 * +-------------+----------+-------------+----------+
+	 * |    Byte 0   |  Byte 1  |    Byte 2   |  Byte 3  |
+	 * +-------------+----------+-------------+----------+
+	 * | Y (pixel 0) | U (both) | Y (pixel 1) | V (both) |
+	 * +-------------+----------+-------------+----------+
+	 */
+	if (!uvc_alloc_frame(camera, V4L2_PIX_FMT_YUYV, 320, 240))
+		fatal("Could not allocate enough memory for frames");
+
 	while (!IS_STOPPED()) {
-		frame = uvc_capture_frame();
-		if (!appbase_push_frame(ab, frame->data, frame->length))
-			fprintf(stderr, "ERROR: Could not send frame\n");
-		free(frame);
+		if (uvc_capture_frame(camera)) {
+			if (!appbase_push_frame(ab, camera->frame, camera->frame_size))
+				fprintf(stderr, "ERROR: Could not send frame\n");
+
+			memset(camera->frame, 0, camera->frame_size);
+		}
 
 		/* sleep(3) should not interfere with our signal handlers, unless we're also handling SIGALRM */
 		sleep(wait_time);

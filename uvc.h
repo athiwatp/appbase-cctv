@@ -7,21 +7,22 @@
 
 #ifndef UVC_H_
 #define UVC_H_
+#include <stdint.h>
+#include "utils.h"
 
-struct camera;
-struct frame {
-	size_t length;
-	char *data;
+struct camera {
+	char *dev_path;
+	size_t frame_size;
+	char *frame;
 };
 
 struct camera *uvc_open();
 
-/* TODO
- * This requires uvc_capture_frame() to allocate memory.
- * Maybe it's not the best way.
- * Are frames of a fixed size?
- */
-struct frame *uvc_capture_frame();
-void uvc_close(struct camera *c);
+bool uvc_alloc_frame(struct camera *,
+		int format,
+		size_t width,
+		size_t height);
+bool uvc_capture_frame(struct camera *);
+void uvc_close(struct camera *);
 
 #endif /* UVC_H_ */

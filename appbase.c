@@ -111,7 +111,7 @@ struct appbase *appbase_open(const char *app_name,
 	if (!ab->url)
 		goto fatal;
 
-	/* Create out base JSON object */
+	/* Create our base JSON object */
 	ab->json = json_object_new_object();
 	if (!ab->json)
 		goto fatal;
@@ -145,13 +145,13 @@ void appbase_close(struct appbase *ab)
 	}
 }
 
-void appbase_enable_progress(struct appbase *ab, int enable)
+void appbase_enable_progress(struct appbase *ab, bool enable)
 {
 	if (ab && ab->curl && (enable == 0 || enable == 1))
 		curl_easy_setopt(ab->curl, CURLOPT_NOPROGRESS, !enable);
 }
 
-void appbase_enable_verbose(struct appbase *ab, int enable)
+void appbase_enable_verbose(struct appbase *ab, bool enable)
 {
 	if (ab && ab->curl && (enable == 0 || enable == 1)) {
 		curl_easy_setopt(ab->curl, CURLOPT_VERBOSE, enable);
@@ -159,14 +159,14 @@ void appbase_enable_verbose(struct appbase *ab, int enable)
 	}
 }
 
-int appbase_push_frame(struct appbase *ab,
-		const char *data, unsigned int length)
+bool appbase_push_frame(struct appbase *ab,
+		const char *data, size_t length)
 {
-	int retval = -1;
+	CURLcode response_code;
 	struct json_internal json;
 
-	if (!ab || !ab->curl || !ab->url || !ab->json || !data || length <= 0)
-		return -1;
+	if (!ab || !ab->curl || !ab->url || !ab->json || !data || !length)
+		return false;
 
 	/* TODO
 	 * This is for testing purposes only.
@@ -189,10 +189,10 @@ int appbase_push_frame(struct appbase *ab,
 	curl_easy_setopt(ab->curl, CURLOPT_READDATA, &json);
 	curl_easy_setopt(ab->curl, CURLOPT_READFUNCTION, reader_cb);
 
-	retval = curl_easy_perform(ab->curl);
+	response_code = curl_easy_perform(ab->curl);
 
 	/* No need to free, json_object_put() releases the string for us */
 	json.length = 0;
 
-	return (retval == CURLE_OK);
+	return (response_code == CURLE_OK);
 }
