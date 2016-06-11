@@ -130,14 +130,13 @@ fatal:
 
 void appbase_close(struct appbase *ab)
 {
-	int freed = 0;
 	if (ab) {
 		if (ab->curl)
 			curl_easy_cleanup(ab->curl);
 		if (ab->url)
 			free(ab->url);
 		if (ab->json)
-			freed = json_object_put(ab->json);
+			json_object_put(ab->json);
 
 		ab->curl = NULL;
 		ab->url = NULL;
