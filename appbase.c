@@ -141,6 +141,8 @@ void appbase_close(struct appbase *ab)
 		ab->curl = NULL;
 		ab->url = NULL;
 		ab->json = NULL;
+
+		free(ab);
 	}
 }
 

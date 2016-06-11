@@ -114,8 +114,6 @@ static bool uvc_map_buffers(struct camera_internal *c)
 	return true;
 
 fail:
-	fprintf(stderr, "ERROR: %d\n", errno);
-	perror(NULL);
 	if (c->buffers)
 		uvc_unmap_buffers(c);
 
@@ -128,7 +126,7 @@ struct camera *uvc_open()
 	struct camera *c = ec_malloc(sizeof(struct camera));
 
 	c->dev_path = ec_malloc(sizeof(default_dev_path));
-	c->internal = ec_malloc(sizeof(struct camera_internal *));
+	c->internal = ec_malloc(sizeof(struct camera_internal));
 	memcpy(c->dev_path, default_dev_path, sizeof(default_dev_path));
 
 	c->frame = NULL;
@@ -210,7 +208,7 @@ void uvc_close(struct camera *c)
 				uvc_unmap_buffers(c->internal);
 
 			close(c->internal->fd);
-			//free(c->internal);
+			free(c->internal);
 		}
 		if (c->dev_path)
 			free(c->dev_path);
