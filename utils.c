@@ -11,15 +11,18 @@
 
 void fatal(const char *message)
 {
-	syslog(SYSLOG_FACILITY | LOG_ERR, "FATAL ERROR: %s", message);
-	syslog(SYSLOG_FACILITY | LOG_ERR, "Stopping");
+//	syslog(SYSLOG_FACILITY | LOG_ERR, "FATAL ERROR: %s", message);
+//	syslog(SYSLOG_FACILITY | LOG_ERR, "Stopping");
+
+	fprintf(stderr, "FATAL ERROR: %s\n", message);
+	fprintf(stderr, "Stopping.\n");
 
 	exit(1);
 }
 
 void *ec_malloc(size_t size)
 {
-	void *mem = malloc(size);
+	void *mem = calloc(1, size);
 	if (!mem)
 		fatal("Out of memory");
 
