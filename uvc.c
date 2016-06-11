@@ -169,6 +169,7 @@ abort:
 	if (c->internal->fd != -1)
 		close(c->internal->fd);
 	free(c->internal);
+	free(c->dev_path);
 	free(c);
 
 	return NULL;
@@ -233,6 +234,11 @@ bool uvc_capture_frame(struct camera *c)
 	if (ioctl(c->internal->fd, VIDIOC_DQBUF, &buf) < 0)
 		goto fail;
 
+	/* Copy time when first byte was captured */
+	memcpy(&c->capture_time, &buf.timestamp, sizeof(struct timeval));
+
+
+	/* Copy frame bytes */
 	size = (buf.bytesused < c->frame_size ?
 			buf.bytesused :
 			c->frame_size);

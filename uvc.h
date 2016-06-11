@@ -15,6 +15,7 @@ struct camera {
 	char *dev_path;
 	size_t frame_size;
 	size_t frame_bytes_used;
+	struct timeval capture_time;
 	char *frame;
 	size_t width;
 	size_t height;
