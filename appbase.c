@@ -6,6 +6,7 @@
  */
 #include <curl/curl.h>
 #include <json-c/json_object.h>
+#include <modp_b64.h>
 #include <stdio.h>
 #include <malloc.h>
 #include <string.h>
@@ -161,28 +162,42 @@ void appbase_enable_verbose(struct appbase *ab, bool enable)
 }
 
 bool appbase_push_frame(struct appbase *ab,
-		const char *data, size_t length)
+		const char *data, size_t length,
+		struct timeval *timestamp)
 {
 	CURLcode response_code;
 	struct json_internal json;
+	size_t b64_size = 0;
+	char *b64_data;
 
-	if (!ab || !ab->curl || !ab->url || !ab->json || !data || !length)
+	if (!ab || !ab->curl || !ab->url || !ab->json || !data || !length || !timestamp)
 		return false;
 
-	/* TODO
-	 * This is for testing purposes only.
-	 * Never treat raw image data as a string (ie. null terminated).
+	/*
+	 * Transform raw frame data into base64
 	 */
+	b64_size = modp_b64_encode_len(length);
+	b64_data = ec_malloc(b64_size);
+	if (modp_b64_encode(b64_data, data, length) == -1)
+		return false;
+
 	/*
 	 * Generate a JSON object with the format:
 	 *
-	 * 	{"image": "<data>"}
+	 * 	{
+	 * 		"image": "<data>",
+	 * 		"sec": "<seconds>",
+	 * 		"usec": "<milliseconds>"
+	 * 	}
 	 */
-	json_object_object_add(ab->json,
-			"image",
-			json_object_new_string(data));
+	json_object_object_add(ab->json, "image", json_object_new_string(b64_data));
+	json_object_object_add(ab->json, "sec", json_object_new_int64(timestamp->tv_sec));
+	json_object_object_add(ab->json, "usec", json_object_new_int64(timestamp->tv_usec));
+
 	json.json = json_object_to_json_string_ext(ab->json, JSON_C_TO_STRING_PLAIN);
 	json.length = strlen(json.json);
+
+	printf("%s\n", json_object_to_json_string_ext(ab->json, JSON_C_TO_STRING_PRETTY));
 
 	curl_easy_setopt(ab->curl, CURLOPT_URL, ab->url);
 	curl_easy_setopt(ab->curl, CURLOPT_UPLOAD, 1L);
@@ -192,8 +207,9 @@ bool appbase_push_frame(struct appbase *ab,
 
 	response_code = curl_easy_perform(ab->curl);
 
-	/* No need to free, json_object_put() releases the string for us */
+	/* No need to free the JSON string, json_object_put() releases the string for us */
 	json.length = 0;
+	free(b64_data);
 
 	return (response_code == CURLE_OK);
 }

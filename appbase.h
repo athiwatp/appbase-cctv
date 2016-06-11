@@ -16,7 +16,8 @@ struct appbase *appbase_open(const char *app_name,
 		const char *password);
 int8_t appbase_push_frame(struct appbase *ab,
 		const char *data,
-		uint32_t length);
+		uint32_t length,
+		struct timeval *timestamp);
 void appbase_close(struct appbase *);
 
 void appbase_enable_progress(struct appbase *appbase, uint8_t enable);
