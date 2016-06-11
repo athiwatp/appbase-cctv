@@ -55,8 +55,10 @@ static void uvc_unmap_buffers(struct camera_internal *c)
 {
 	struct v4l2_requestbuffers *rb = &c->reqbufs;
 
-	for (int i = 0; i < rb->count; i++)
-		munmap(c->buffers[i], c->buflens[i]);
+	for (int i = 0; i < rb->count; i++) {
+		if (c->buffers[i])
+			munmap(c->buffers[i], c->buflens[i]);
+	}
 
 	free(c->buffers);
 	free(c->buflens);
@@ -73,9 +75,6 @@ static bool uvc_map_buffers(struct camera_internal *c)
 	memset(rb, 0, sizeof(struct v4l2_requestbuffers));
 	memset(&buf, 0, sizeof(buf));
 
-	c->buffers = ec_malloc(rb->count * sizeof(char *));
-	c->buflens = ec_malloc(rb->count * sizeof(size_t));
-
 	/*
 	 * Request NUM_REQUESTED_BUFS buffers, and accept
 	 * a minimun of NUM_MIN_BUFS.
@@ -88,6 +87,9 @@ static bool uvc_map_buffers(struct camera_internal *c)
 		goto fail;
 
 	/* Now map the buffers in userspace */
+	c->buffers = ec_malloc(rb->count * sizeof(char *));
+	c->buflens = ec_malloc(rb->count * sizeof(size_t));
+
 	for (int buf_index = 0; buf_index < rb->count; buf_index++) {
 		/* Tell the driver to allocate a new buffer in kernel... */
 		buf.index = buf_index;
