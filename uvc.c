@@ -21,6 +21,7 @@
 
 struct camera_internal {
 	int fd;
+	bool is_streaming;
 	struct v4l2_capability cap;
 	struct v4l2_format format;
 	struct v4l2_requestbuffers reqbufs;
@@ -131,6 +132,7 @@ struct camera *uvc_open()
 
 	c->frame = NULL;
 	c->frame_size = 0;
+	c->internal->is_streaming = false;
 
 	c->internal->fd = open(c->dev_path, O_RDWR);
 	if (c->internal->fd == -1)
@@ -186,24 +188,47 @@ fail:
 
 bool uvc_capture_frame(struct camera *c)
 {
-	char test_data[] = "foo";
 	size_t size = 0;
+	struct v4l2_buffer buf;
 
-	if (!c || !c->frame || c->frame_size <= 0)
-		return false;
+	/*
+	 * Same as in uvc_alloc_frame(): we only support V4L2_PIX_FMT_YUYV for now.
+	 */
+	if (!c || !c->internal || !c->frame || c->frame_size <= 0 || c->format != V4L2_PIX_FMT_YUYV)
+		goto fail;
 
-	size = (c->frame_size < sizeof(test_data) ?
-			c->frame_size :
-			sizeof(test_data));
-	memcpy(c->frame, test_data, size);
+	memset(&buf, 0, sizeof(buf));
+
+	if (!c->internal->is_streaming) {
+		if (ioctl(c->internal->fd, VIDIOC_STREAMON, &c->internal->reqbufs.type) < 0)
+			goto fail;
+		c->internal->is_streaming = true;
+	}
+
+	buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+	buf.memory = V4L2_MEMORY_MMAP;
+	if (ioctl(c->internal->fd, VIDIOC_DQBUF, &buf) < 0)
+		goto fail;
+
+	size = (buf.bytesused < c->frame_size ?
+			buf.bytesused :
+			c->frame_size);
+	memcpy(c->frame, c->internal->buffers[buf.index], size);
 
 	return true;
+
+fail:
+	return false;
 }
 
 void uvc_close(struct camera *c)
 {
 	if (c) {
 		if (c->internal) {
+			if (c->internal->is_streaming) {
+				ioctl(c->internal->fd, VIDIOC_STREAMOFF, &c->internal->reqbufs.type);
+				c->internal->is_streaming = false;
+			}
 			if (c->internal->buffers)
 				uvc_unmap_buffers(c->internal);
 
