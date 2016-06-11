@@ -14,6 +14,7 @@ struct camera_internal;
 struct camera {
 	char *dev_path;
 	size_t frame_size;
+	size_t frame_bytes_used;
 	char *frame;
 	size_t width;
 	size_t height;

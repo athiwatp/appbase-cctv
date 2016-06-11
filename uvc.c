@@ -22,8 +22,6 @@
 struct camera_internal {
 	int fd;
 	bool is_streaming;
-	struct v4l2_capability cap;
-	struct v4l2_format format;
 	struct v4l2_requestbuffers reqbufs;
 	char **buffers;
 	size_t *buflens;
@@ -33,21 +31,21 @@ static bool uvc_setup_format(struct camera_internal *c,
 		size_t *width, size_t *height,
 		int format)
 {
-	struct v4l2_format *fmt = &c->format;
+	struct v4l2_format fmt;
 
-	memset(fmt, 0, sizeof(struct v4l2_format));
+	memset(&fmt, 0, sizeof(fmt));
 
-	fmt->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-	fmt->fmt.pix.width = (*width);
-	fmt->fmt.pix.height = (*height);
-	fmt->fmt.pix.pixelformat = format;
-	fmt->fmt.pix.field = V4L2_FIELD_ANY;
-	if (ioctl(c->fd, VIDIOC_S_FMT, fmt) < 0)
+	fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+	fmt.fmt.pix.width = (*width);
+	fmt.fmt.pix.height = (*height);
+	fmt.fmt.pix.pixelformat = format;
+	fmt.fmt.pix.field = V4L2_FIELD_ANY;
+	if (ioctl(c->fd, VIDIOC_S_FMT, &fmt) < 0)
 		return false;
 
 	/* Replace with actual width and height */
-	*width = fmt->fmt.pix.width;
-	*height = fmt->fmt.pix.height;
+	*width = fmt.fmt.pix.width;
+	*height = fmt.fmt.pix.height;
 
 	return true;
 }
@@ -121,9 +119,29 @@ fail:
 	return false;
 }
 
+static bool uvc_start_streaming(struct camera_internal *c)
+{
+	if (!c->is_streaming) {
+		if (ioctl(c->fd, VIDIOC_STREAMON, &c->reqbufs.type) < 0)
+			return false;
+		c->is_streaming = true;
+	}
+
+	return true;
+}
+
+static void uvc_stop_streaming(struct camera_internal *c)
+{
+	if (c->is_streaming) {
+		ioctl(c->fd, VIDIOC_STREAMOFF, &c->reqbufs.type);
+		c->is_streaming = false;
+	}
+}
+
 struct camera *uvc_open()
 {
 	char default_dev_path[] = "/dev/video0";
+	struct v4l2_capability cap;
 	struct camera *c = ec_malloc(sizeof(struct camera));
 
 	c->dev_path = ec_malloc(sizeof(default_dev_path));
@@ -138,11 +156,11 @@ struct camera *uvc_open()
 	if (c->internal->fd == -1)
 		goto abort;
 
-	if (ioctl(c->internal->fd, VIDIOC_QUERYCAP, &c->internal->cap) < 0)
+	if (ioctl(c->internal->fd, VIDIOC_QUERYCAP, &cap) < 0)
 		goto abort;
 
-	if (!(c->internal->cap.capabilities & V4L2_CAP_VIDEO_CAPTURE) ||
-		!(c->internal->cap.capabilities & V4L2_CAP_STREAMING))
+	if (!(cap.capabilities & V4L2_CAP_VIDEO_CAPTURE) ||
+		!(cap.capabilities & V4L2_CAP_STREAMING))
 		goto abort;
 
 	return c;
@@ -175,9 +193,20 @@ bool uvc_alloc_frame(struct camera *c)
 	if (c->frame_size == 0)
 		goto fail;
 	c->frame = ec_malloc(c->frame_size);
+	c->frame_bytes_used = 0;
 
 	/* Map frame buffers into userspace */
 	if (!uvc_map_buffers(c->internal))
+		goto fail;
+
+	/*
+	 * Finally, activate streaming.
+	 * This will tell the driver to create the incoming and outgoing queues,
+	 * and will leave the camera ready for capturing frames.
+	 * Subsequent calls to uvc_capture_frame() will fail at ioctl VIDIOC_DQBUF
+	 * if we don't do this.
+	 */
+	if (!uvc_start_streaming(c->internal))
 		goto fail;
 
 	return true;
@@ -199,12 +228,6 @@ bool uvc_capture_frame(struct camera *c)
 
 	memset(&buf, 0, sizeof(buf));
 
-	if (!c->internal->is_streaming) {
-		if (ioctl(c->internal->fd, VIDIOC_STREAMON, &c->internal->reqbufs.type) < 0)
-			goto fail;
-		c->internal->is_streaming = true;
-	}
-
 	buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 	buf.memory = V4L2_MEMORY_MMAP;
 	if (ioctl(c->internal->fd, VIDIOC_DQBUF, &buf) < 0)
@@ -214,6 +237,10 @@ bool uvc_capture_frame(struct camera *c)
 			buf.bytesused :
 			c->frame_size);
 	memcpy(c->frame, c->internal->buffers[buf.index], size);
+	c->frame_bytes_used = size;
+
+	if (ioctl(c->internal->fd, VIDIOC_QBUF, &buf) < 0)
+		goto fail;
 
 	return true;
 
@@ -225,10 +252,8 @@ void uvc_close(struct camera *c)
 {
 	if (c) {
 		if (c->internal) {
-			if (c->internal->is_streaming) {
-				ioctl(c->internal->fd, VIDIOC_STREAMOFF, &c->internal->reqbufs.type);
-				c->internal->is_streaming = false;
-			}
+			uvc_stop_streaming(c->internal);
+
 			if (c->internal->buffers)
 				uvc_unmap_buffers(c->internal);
 
