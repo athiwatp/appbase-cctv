@@ -49,6 +49,7 @@ fatal:
 struct json_internal {
 	const char *json;
 	size_t length;
+	off_t offset;
 };
 
 /*
@@ -59,22 +60,27 @@ struct json_internal {
  */
 static size_t reader_cb(char *buffer, size_t size, size_t nitems, void *instream)
 {
-	size_t written = 0, buf_len = size * nitems;
+	size_t should_write = size * nitems;
 	struct json_internal *json = (struct json_internal *) instream;
 
-	if (!instream || !json->json || json->length <= 0)
-		goto end;
+	if (!instream || !json->json || json->length <= 0 || should_write <= 0)
+		return CURL_READFUNC_ABORT;
 
-	written = (buf_len >= json->length ? json->length : buf_len);
-	if (!buffer || buf_len <= 0) {
-		written = 0;
-		goto end;
+	if (json->offset >= json->length) {
+		/*
+		 * There's no more data to send - we've sent it all.
+		 * Tell libcurl we're done.
+		 */
+		return 0;
 	}
 
-	memcpy(buffer, json->json, written);
+	if (json->offset + should_write > json->length)
+		should_write = json->length - json->offset;
 
-end:
-	return written;
+	memcpy(buffer, json->json + json->offset, should_write);
+	json->offset += should_write;
+
+	return should_write;
 }
 
 /*
@@ -196,8 +202,7 @@ bool appbase_push_frame(struct appbase *ab,
 
 	json.json = json_object_to_json_string_ext(ab->json, JSON_C_TO_STRING_PLAIN);
 	json.length = strlen(json.json);
-
-	printf("%s\n", json_object_to_json_string_ext(ab->json, JSON_C_TO_STRING_PRETTY));
+	json.offset = 0;
 
 	curl_easy_setopt(ab->curl, CURLOPT_URL, ab->url);
 	curl_easy_setopt(ab->curl, CURLOPT_UPLOAD, 1L);
@@ -207,8 +212,14 @@ bool appbase_push_frame(struct appbase *ab,
 
 	response_code = curl_easy_perform(ab->curl);
 
-	/* No need to free the JSON string, json_object_put() releases the string for us */
+	/*
+	 * No need to free the JSON string.
+	 * We call json_object_put() on the root JSON object in appbase_close(),
+	 * and it will release the whole JSON object, including this string
+	 * for us.
+	 */
 	json.length = 0;
+	json.offset = 0;
 	free(b64_data);
 
 	return (response_code == CURLE_OK);
