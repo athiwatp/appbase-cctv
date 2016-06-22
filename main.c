@@ -105,17 +105,19 @@ static void sighandler(int s)
 
 static void run(struct camera *camera, struct appbase *ab, bool debug)
 {
+	struct frame *f;
 	if (uvc_capture_frame(camera)) {
+		f = camera->frame;
 			if (!appbase_push_frame(ab,
-					camera->frame, camera->frame_bytes_used,
-					&camera->capture_time))
+					f->frame_data, f->frame_bytes_used,
+					&f->capture_time))
 				fprintf(stderr, "ERROR: Could not send frame\n");
 
 		if (debug)
-			write_to_disk(camera->frame, camera->frame_bytes_used);
+			write_to_disk(f->frame_data, f->frame_bytes_used);
 
-		memset(camera->frame, 0, camera->frame_size);
-		camera->frame_bytes_used = 0;
+		memset(f->frame_data, 0, f->frame_size);
+		f->frame_bytes_used = 0;
 	} else {
 		fprintf(stderr, "ERROR: Could not capture frame\n");
 	}
@@ -204,11 +206,11 @@ int main(int argc, char **argv)
 	 * | Y (pixel 0) | U (both) | Y (pixel 1) | V (both) |
 	 * +-------------+----------+-------------+----------+
 	 */
-	camera->width = 320;
-	camera->height = 240;
-	camera->format = V4L2_PIX_FMT_YUYV;
-	if (!uvc_alloc_frame(camera))
+	camera->frame = uvc_alloc_frame(320, 240, V4L2_PIX_FMT_YUYV);
+	if (!camera->frame)
 		fatal("Could not allocate enough memory for frames");
+	if (!uvc_start(camera))
+		fatal("Could not start camera for streaming");
 
 	if (oneshot) {
 		run(camera, ab, debug);

@@ -149,7 +149,6 @@ struct camera *uvc_open()
 	memcpy(c->dev_path, default_dev_path, sizeof(default_dev_path));
 
 	c->frame = NULL;
-	c->frame_size = 0;
 	c->internal->is_streaming = false;
 
 	c->internal->fd = open(c->dev_path, O_RDWR);
@@ -175,26 +174,49 @@ abort:
 	return NULL;
 }
 
-bool uvc_alloc_frame(struct camera *c)
+struct frame *uvc_alloc_frame(size_t width, size_t height, int format)
 {
+	struct frame *frame = ec_malloc(sizeof(struct frame));
+
 	/*
 	 * We only allow V4L2_PIX_FMT_YUYV for now.
 	 * It's easy to extend this API in the future, but
 	 * keep in mind the calculations that follow are all performed
 	 * assuming YUYV format is being used.
 	 */
-	if (!c || !c->internal || c->format != V4L2_PIX_FMT_YUYV)
+	if (format != V4L2_PIX_FMT_YUYV)
+		goto fail;
+
+	frame->frame_size = width * height * 2;
+	if (frame->frame_size == 0)
+		goto fail;
+
+	frame->frame_data = ec_malloc(frame->frame_size);
+	frame->frame_bytes_used = 0;
+	frame->width = width;
+	frame->height = height;
+	frame->format = format;
+
+	return frame;
+
+fail:
+	if (frame) {
+		if (frame->frame_data)
+			free(frame->frame_data);
+		free(frame);
+	}
+
+	return NULL;
+}
+
+bool uvc_start(struct camera *c)
+{
+	if (!c || !c->internal || !c->frame || c->frame->format != V4L2_PIX_FMT_YUYV)
 		goto fail;
 
 	/* Set up desired frame format */
-	if (!uvc_setup_format(c->internal, &c->width, &c->height, c->format))
+	if (!uvc_setup_format(c->internal, &c->frame->width, &c->frame->height, c->frame->format))
 		goto fail;
-
-	c->frame_size = c->width * c->height * 2;
-	if (c->frame_size == 0)
-		goto fail;
-	c->frame = ec_malloc(c->frame_size);
-	c->frame_bytes_used = 0;
 
 	/* Map frame buffers into userspace */
 	if (!uvc_map_buffers(c->internal))
@@ -220,11 +242,12 @@ bool uvc_capture_frame(struct camera *c)
 {
 	size_t size = 0;
 	struct v4l2_buffer buf;
+	struct frame *f = c->frame;
 
 	/*
 	 * Same as in uvc_alloc_frame(): we only support V4L2_PIX_FMT_YUYV for now.
 	 */
-	if (!c || !c->internal || !c->frame || c->frame_size <= 0 || c->format != V4L2_PIX_FMT_YUYV)
+	if (!c || !c->internal || !f || f->frame_size <= 0 || f->format != V4L2_PIX_FMT_YUYV)
 		goto fail;
 
 	memset(&buf, 0, sizeof(buf));
@@ -235,15 +258,15 @@ bool uvc_capture_frame(struct camera *c)
 		goto fail;
 
 	/* Copy time when first byte was captured */
-	memcpy(&c->capture_time, &buf.timestamp, sizeof(struct timeval));
+	memcpy(&f->capture_time, &buf.timestamp, sizeof(struct timeval));
 
 
 	/* Copy frame bytes */
-	size = (buf.bytesused < c->frame_size ?
+	size = (buf.bytesused < f->frame_size ?
 			buf.bytesused :
-			c->frame_size);
-	memcpy(c->frame, c->internal->buffers[buf.index], size);
-	c->frame_bytes_used = size;
+			f->frame_size);
+	memcpy(f->frame_data, c->internal->buffers[buf.index], size);
+	f->frame_bytes_used = size;
 
 	if (ioctl(c->internal->fd, VIDIOC_QBUF, &buf) < 0)
 		goto fail;

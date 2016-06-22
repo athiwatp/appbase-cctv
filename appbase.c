@@ -179,9 +179,7 @@ bool appbase_push_frame(struct appbase *ab,
 	if (!ab || !ab->curl || !ab->url || !ab->json || !data || !length || !timestamp)
 		return false;
 
-	/*
-	 * Transform raw frame data into base64
-	 */
+	/* Transform raw frame data into base64 */
 	b64_size = modp_b64_encode_len(length);
 	b64_data = ec_malloc(b64_size);
 	if (modp_b64_encode(b64_data, data, length) == -1)

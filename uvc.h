@@ -13,19 +13,24 @@
 struct camera_internal;
 struct camera {
 	char *dev_path;
+	struct frame *frame;
+	struct camera_internal *internal;
+};
+
+struct frame {
 	size_t frame_size;
 	size_t frame_bytes_used;
 	struct timeval capture_time;
-	char *frame;
+	char *frame_data;
 	size_t width;
 	size_t height;
 	int format;
-	struct camera_internal *internal;
 };
 
 struct camera *uvc_open();
 
-bool uvc_alloc_frame(struct camera *);
+struct frame *uvc_alloc_frame(size_t width, size_t height, int format);
+bool uvc_start(struct camera *);
 bool uvc_capture_frame(struct camera *);
 void uvc_close(struct camera *);
 
