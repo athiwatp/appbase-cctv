@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <malloc.h>
 #include <string.h>
+#include "main.h"
 #include "utils.h"
 
 #define APPBASE_API_URL "scalr.api.appbase.io"
@@ -221,4 +222,10 @@ bool appbase_push_frame(struct appbase *ab,
 	free(b64_data);
 
 	return (response_code == CURLE_OK);
+}
+
+/* TODO implement this */
+bool appbase_fill_frame(struct frame *f)
+{
+	return true;
 }
