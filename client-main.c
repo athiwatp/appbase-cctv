@@ -13,10 +13,6 @@
 #include "uvc.h"
 #include "window.h"
 
-int stop;
-#define SHOULD_STOP(v) (stop = v)
-#define IS_STOPPED()   (stop)
-
 static void print_usage(const char *name)
 {
 	if (name) {
@@ -34,8 +30,6 @@ int main(int argc, char **argv)
 	struct appbase *ab;
 	struct frame *frame;
 	struct window *window;
-
-	SHOULD_STOP(0);
 
 	opt = getopt(argc, argv, "d");
 	if (opt != -1 && opt == 'd')
@@ -63,7 +57,7 @@ int main(int argc, char **argv)
 		fatal("Could not allocate frame");
 
 	window = start_window(320, 240, V4L2_PIX_FMT_YUYV);
-	while (!IS_STOPPED()) {
+	while (!window->is_closed()) {
 		if (!appbase_fill_frame(frame))
 			fatal("Could not read frame");
 		if (!window->render(frame))
@@ -73,8 +67,10 @@ int main(int argc, char **argv)
 	window = NULL;
 
 	uvc_free_frame(frame);
+	goto exit;
 
 exit_help:
 	print_usage(argv[0]);
+exit:
 	return 0;
 }

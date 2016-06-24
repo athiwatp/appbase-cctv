@@ -32,9 +32,15 @@ static void sdl_close(struct window_internal *wi)
 	SDL_Quit();
 }
 
+/* TODO implement this */
 static bool sdl_render(struct frame *f)
 {
 	return true;
+}
+
+static bool sdl_is_closed()
+{
+	return SDL_QuitRequested();
 }
 
 struct window *start_window(size_t width, size_t height, int format)
@@ -79,6 +85,7 @@ struct window *start_window(size_t width, size_t height, int format)
 		goto fail_uninitialize;
 
 	w->render = sdl_render;
+	w->is_closed = sdl_is_closed;
 
 	return w;
 

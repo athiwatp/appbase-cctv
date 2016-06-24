@@ -14,6 +14,7 @@
 struct window_internal;
 struct window {
 	bool (*render) (struct frame *);
+	bool (*is_closed) ();
 	struct window_internal *internal;
 };
 
