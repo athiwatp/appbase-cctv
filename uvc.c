@@ -200,13 +200,17 @@ struct frame *uvc_alloc_frame(size_t width, size_t height, int format)
 	return frame;
 
 fail:
-	if (frame) {
-		if (frame->frame_data)
-			free(frame->frame_data);
-		free(frame);
-	}
-
+	uvc_free_frame(frame);
 	return NULL;
+}
+
+void uvc_free_frame(struct frame *f)
+{
+	if (f) {
+		if (f->frame_data)
+			free(f->frame_data);
+		free(f);
+	}
 }
 
 bool uvc_start(struct camera *c)
@@ -292,7 +296,7 @@ void uvc_close(struct camera *c)
 		if (c->dev_path)
 			free(c->dev_path);
 		if (c->frame)
-			free(c->frame);
+			uvc_free_frame(c->frame);
 		free(c);
 	}
 }
