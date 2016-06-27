@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <jpeglib.h>
 #include <linux/videodev2.h>
 #include <sys/stat.h>
 #include "utils.h"
@@ -42,7 +43,7 @@ static char *create_unique_filename()
 #undef COUNT_LIMIT
 }
 
-static void write_to_disk(const char *data, size_t size)
+static void write_to_disk(const unsigned char *data, size_t size)
 {
 	FILE *f;
 	char *filename = create_unique_filename();
@@ -103,15 +104,86 @@ static void sighandler(int s)
 	SHOULD_STOP(1);
 }
 
-static void run(struct camera *camera, struct appbase *ab, bool debug)
+static void convert_to_jpeg(struct frame *f)
+{
+#define JPEG_QUALITY 95
+	struct jpeg_compress_struct info;
+	struct jpeg_error_mgr error;
+	JSAMPROW row_pointer[1];
+	unsigned char *line_buffer, *yuyv;
+	int z;
+	unsigned char *outb = NULL;
+	unsigned long outb_len = 0;
+
+	line_buffer = ec_malloc(f->width * 3);
+	yuyv = f->frame_data;
+
+	info.err = jpeg_std_error(&error);
+	jpeg_create_compress(&info);
+	jpeg_mem_dest(&info, &outb, &outb_len);
+
+	info.image_width = f->width;
+	info.image_height = f->height;
+	info.input_components = 3;
+	info.in_color_space = JCS_RGB;
+
+	jpeg_set_defaults(&info);
+	jpeg_set_quality(&info, JPEG_QUALITY, true);
+
+	jpeg_start_compress(&info, true);
+	z = 0;
+	while (info.next_scanline < info.image_height) {
+		int x;
+		unsigned char *ptr = line_buffer;
+
+		for (x = 0; x < f->width; x++) {
+			int r, g, b;
+			int y, u, v;
+
+			if (!z)
+				y = yuyv[0] << 8;
+			else
+				y = yuyv[2] << 8;
+			u = yuyv[1] - 128;
+			v = yuyv[3] - 128;
+
+			r = (y + (359 * v)) >> 8;
+			g = (y - (88 * u) - (183 * v)) >> 8;
+			b = (y + (454 * u)) >> 8;
+
+			*(ptr++) = (r > 255) ? 255 : ((r < 0) ? 0 : r);
+			*(ptr++) = (g > 255) ? 255 : ((g < 0) ? 0 : g);
+			*(ptr++) = (b > 255) ? 255 : ((b < 0) ? 0 : b);
+
+			if (z++) {
+				z = 0;
+				yuyv += 4;
+			}
+		}
+
+		row_pointer[0] = line_buffer;
+		jpeg_write_scanlines (&info, row_pointer, 1);
+	}
+
+	jpeg_finish_compress(&info);
+	jpeg_destroy_compress(&info);
+
+	write_to_disk(outb, outb_len);
+
+	free(line_buffer);
+}
+
+static void run(struct camera *camera, struct appbase *ab, bool debug, bool jpeg)
 {
 	struct frame *f;
 	if (uvc_capture_frame(camera)) {
 		f = camera->frame;
-			if (!appbase_push_frame(ab,
-					f->frame_data, f->frame_bytes_used,
-					&f->capture_time))
-				fprintf(stderr, "ERROR: Could not send frame\n");
+		if (jpeg)
+			convert_to_jpeg(f);
+		if (!appbase_push_frame(ab,
+				f->frame_data, f->frame_bytes_used,
+				&f->capture_time))
+			fprintf(stderr, "ERROR: Could not send frame\n");
 
 		if (debug)
 			write_to_disk(f->frame_data, f->frame_bytes_used);
@@ -129,13 +201,13 @@ int main(int argc, char **argv)
 	int opt;
 	char *endptr;
 	long int wait_time = DEFAULT_WAIT_TIME;
-	bool debug = false, oneshot = false;
+	bool debug = false, oneshot = false, jpeg = false;
 	struct sigaction sig;
 	struct appbase *ab;
 	struct camera *camera;
 
 	/* Parse command-line options */
-	while ((opt = getopt(argc, argv, "w:ds")) != -1) {
+	while ((opt = getopt(argc, argv, "w:dsj")) != -1) {
 		switch (opt) {
 		case 'w':
 			wait_time = strtol(optarg, &endptr, 10);
@@ -147,6 +219,9 @@ int main(int argc, char **argv)
 			break;
 		case 's':
 			oneshot = true;
+			break;
+		case 'j':
+			jpeg = true;
 			break;
 		default:
 			print_usage_and_exit(argv[0]);
@@ -214,12 +289,12 @@ int main(int argc, char **argv)
 		fatal("Could not start camera for streaming");
 
 	if (oneshot) {
-		run(camera, ab, debug);
+		run(camera, ab, debug, jpeg);
 		goto end;
 	}
 
 	while (!IS_STOPPED()) {
-		run(camera, ab, debug);
+		run(camera, ab, debug, jpeg);
 
 		/*
 		 * sleep(3) should not interfere with our signal handlers,

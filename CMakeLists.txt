@@ -9,7 +9,7 @@ set(library-srcs appbase.c uvc.c utils.c)
 add_library(appbase-common SHARED ${library-srcs})
 
 target_compile_definitions(appbase-common PUBLIC "_GNU_SOURCE=1")
-target_link_libraries(appbase-common "curl" "json-c" "modpbase64")
+target_link_libraries(appbase-common "curl" "json-c" "modpbase64" "jpeg")
 
 # Daemon #
 set(daemon-srcs daemon-main.c)

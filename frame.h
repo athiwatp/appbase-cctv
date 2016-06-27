@@ -12,7 +12,7 @@ struct frame {
 	size_t frame_size;
 	size_t frame_bytes_used;
 	struct timeval capture_time;
-	char *frame_data;
+	unsigned char *frame_data;
 	size_t width;
 	size_t height;
 	int format;

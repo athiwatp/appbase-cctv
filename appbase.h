@@ -18,7 +18,7 @@ struct appbase *appbase_open(const char *app_name,
 		const char *password,
 		bool enable_streaming);
 bool appbase_push_frame(struct appbase *ab,
-		const char *data,
+		const unsigned char *data,
 		uint32_t length,
 		struct timeval *timestamp);
 bool appbase_fill_frame(struct appbase *, struct frame *);
