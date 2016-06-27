@@ -43,7 +43,8 @@ int main(int argc, char **argv)
 	ab = appbase_open(
 			argv[optind],		// app name
 			argv[optind + 1],	// username
-			argv[optind + 2]);	// password
+			argv[optind + 2],	// password
+			true);			// enable streaming
 	if (!ab)
 		fatal("Could not log into Appbase");
 
@@ -58,7 +59,7 @@ int main(int argc, char **argv)
 
 	window = start_window(320, 240, V4L2_PIX_FMT_YUYV);
 	while (!window->is_closed()) {
-		if (!appbase_fill_frame(frame))
+		if (!appbase_fill_frame(ab, frame))
 			fatal("Could not read frame");
 		if (!window->render(frame))
 			fatal("Could not render frame");
@@ -67,6 +68,7 @@ int main(int argc, char **argv)
 	window = NULL;
 
 	uvc_free_frame(frame);
+	appbase_close(ab);
 	goto exit;
 
 exit_help:

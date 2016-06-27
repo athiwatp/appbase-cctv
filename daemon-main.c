@@ -179,7 +179,8 @@ int main(int argc, char **argv)
 	ab = appbase_open(
 			argv[optind],		// app name
 			argv[optind + 1],	// username
-			argv[optind + 2]);	// password
+			argv[optind + 2],	// password
+			false);			// streaming off
 	if (!ab)
 		fatal("Could not log into Appbase");
 

@@ -12,6 +12,7 @@
 #include <string.h>
 #include "main.h"
 #include "utils.h"
+#include "frame.h"
 
 #define APPBASE_API_URL "scalr.api.appbase.io"
 #define APPBASE_PATH	"pic/1"
@@ -23,7 +24,8 @@ struct appbase {
 };
 
 static char *appbase_generate_url(const char *app_name,
-		const char *username, const char *password)
+		const char *username, const char *password,
+		bool streaming)
 {
 	char *url = NULL;
 
@@ -31,7 +33,7 @@ static char *appbase_generate_url(const char *app_name,
 		goto fatal;
 
 #ifdef _GNU_SOURCE
-	if (asprintf(&url, "https://%s:%s@%s/%s/%s",
+	if (asprintf(&url, (streaming ? "https://%s:%s@%s/%s/%s/?stream=true" : "https://%s:%s@%s/%s/%s"),
 			username, password,
 			APPBASE_API_URL,
 			app_name,
@@ -95,47 +97,6 @@ static size_t writer_cb(char *ptr, size_t size, size_t nmemb, void *userdada)
 	return size * nmemb;
 }
 
-/*
- * TODO
- * Socket creation and connection should also be handled here.
- * libcurl might open and close an entirely new connection for every PUT, which we don't want.
- */
-struct appbase *appbase_open(const char *app_name,
-		const char *username, const char *password)
-{
- 	struct appbase *ab =
-			ec_malloc(sizeof(struct appbase));
-
- 	/* Initialize libcurl, and set up our Appbase REST URL */
-	ab->curl = curl_easy_init();
-	if (!ab->curl)
-		goto fatal;
-
-	curl_easy_setopt(ab->curl, CURLOPT_VERBOSE, 0L);
-	curl_easy_setopt(ab->curl, CURLOPT_NOPROGRESS, 1L);
-	curl_easy_setopt(ab->curl, CURLOPT_WRITEFUNCTION, writer_cb);
-
-	ab->url = appbase_generate_url(app_name, username, password);
-	if (!ab->url)
-		goto fatal;
-
-	/* Create our base JSON object */
-	ab->json = json_object_new_object();
-	if (!ab->json)
-		goto fatal;
-
-	return ab;
-
-fatal:
-	if (ab->curl)
-		curl_easy_cleanup(ab->curl);
-	if (ab->url)
-		free(ab->url);
-	free(ab);
-
-	return NULL;
-}
-
 void appbase_close(struct appbase *ab)
 {
 	if (ab) {
@@ -152,6 +113,43 @@ void appbase_close(struct appbase *ab)
 
 		free(ab);
 	}
+}
+
+/*
+ * TODO
+ * Socket creation and connection should also be handled here.
+ * libcurl might open and close an entirely new connection for every PUT, which we don't want.
+ */
+struct appbase *appbase_open(const char *app_name,
+		const char *username, const char *password,
+		bool enable_streaming)
+{
+	struct appbase *ab =
+			ec_malloc(sizeof(struct appbase));
+
+ 	/* Initialize libcurl, and set up our Appbase REST URL */
+	ab->curl = curl_easy_init();
+	if (!ab->curl)
+		goto fatal;
+
+	curl_easy_setopt(ab->curl, CURLOPT_VERBOSE, 0L);
+	curl_easy_setopt(ab->curl, CURLOPT_NOPROGRESS, 1L);
+	curl_easy_setopt(ab->curl, CURLOPT_WRITEFUNCTION, writer_cb);
+
+	ab->url = appbase_generate_url(app_name, username, password, enable_streaming);
+	if (!ab->url)
+		goto fatal;
+
+	/* Create our base JSON object */
+	ab->json = json_object_new_object();
+	if (!ab->json)
+		goto fatal;
+
+	return ab;
+
+fatal:
+	appbase_close(ab);
+	return NULL;
 }
 
 void appbase_enable_progress(struct appbase *ab, bool enable)
@@ -225,7 +223,17 @@ bool appbase_push_frame(struct appbase *ab,
 }
 
 /* TODO implement this */
-bool appbase_fill_frame(struct frame *f)
+bool appbase_fill_frame(struct appbase *ab, struct frame *f)
 {
-	return true;
+	CURLcode response_code;
+
+	if (!ab || !f || !f->frame_data || !f->frame_size)
+		return false;
+
+	curl_easy_setopt(ab->curl, CURLOPT_URL, ab->url);
+	curl_easy_setopt(ab->curl, CURLOPT_HTTPGET, 1L);
+
+	response_code = curl_easy_perform(ab->curl);
+
+	return (response_code == CURLE_OK);
 }
