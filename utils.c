@@ -1,5 +1,5 @@
 /*
- * mem.c
+ * utils.c
  *
  *  Created on: 31 May 2016
  *      Author: ajuaristi <a@juaristi.eus>
@@ -7,6 +7,7 @@
 #include <syslog.h>
 #include <stdlib.h>
 #include <malloc.h>
+#include <string.h>
 #include "utils.h"
 
 void fatal(const char *message)
@@ -26,5 +27,12 @@ void *ec_malloc(size_t size)
 	if (!mem)
 		fatal("Out of memory");
 
+	return mem;
+}
+
+void *ec_malloc_fill(size_t size, const char *data)
+{
+	void *mem = ec_malloc(size);
+	memcpy(mem, data, size);
 	return mem;
 }
