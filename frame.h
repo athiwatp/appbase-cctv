@@ -7,6 +7,7 @@
 
 #ifndef FRAME_H_
 #define FRAME_H_
+#include <time.h>
 
 struct frame {
 	size_t frame_size;
@@ -17,5 +18,7 @@ struct frame {
 	size_t height;
 	int format;
 };
+
+void frame_convert_yuyv_to_jpeg(struct frame *);
 
 #endif /* FRAME_H_ */
