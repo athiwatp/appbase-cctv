@@ -39,7 +39,7 @@ static char *create_debug_filename()
 #undef COUNT_LIMIT
 }
 
-static void write_to_disk(const char *data, size_t size)
+static void write_to_disk(const unsigned char *data, size_t size)
 {
 	FILE *f;
 	char *filename = create_debug_filename();
@@ -48,6 +48,7 @@ static void write_to_disk(const char *data, size_t size)
 	if (f) {
 		fwrite(data, size, 1, f);
 		fclose(f);
+
 		fprintf(stderr, "DEBUG: Frame written to file '%s'\n", filename);
 	}
 
@@ -101,15 +102,17 @@ static void sighandler(int s)
 	SHOULD_STOP(1);
 }
 
-static void run(struct camera *camera, struct appbase *ab, bool debug)
+static void run(struct camera *camera, struct appbase *ab, bool debug, bool jpeg)
 {
 	struct frame *f;
 	if (uvc_capture_frame(camera)) {
 		f = camera->frame;
-			if (!appbase_push_frame(ab,
-					f->frame_data, f->frame_bytes_used,
-					&f->capture_time))
-				fprintf(stderr, "ERROR: Could not send frame\n");
+		if (jpeg)
+			frame_convert_yuyv_to_jpeg(f);
+		if (!appbase_push_frame(ab,
+				f->frame_data, f->frame_bytes_used,
+				&f->capture_time))
+			fprintf(stderr, "ERROR: Could not send frame\n");
 
 		if (debug)
 			write_to_disk(f->frame_data, f->frame_bytes_used);
@@ -127,13 +130,13 @@ int main(int argc, char **argv)
 	int opt;
 	char *endptr;
 	long int wait_time = DEFAULT_WAIT_TIME;
-	bool debug = false, oneshot = false;
+	bool debug = false, oneshot = false, jpeg = false;
 	struct sigaction sig;
 	struct appbase *ab;
 	struct camera *camera;
 
 	/* Parse command-line options */
-	while ((opt = getopt(argc, argv, "w:ds")) != -1) {
+	while ((opt = getopt(argc, argv, "w:dsj")) != -1) {
 		switch (opt) {
 		case 'w':
 			wait_time = strtol(optarg, &endptr, 10);
@@ -145,6 +148,9 @@ int main(int argc, char **argv)
 			break;
 		case 's':
 			oneshot = true;
+			break;
+		case 'j':
+			jpeg = true;
 			break;
 		default:
 			print_usage_and_exit(argv[0]);
@@ -212,12 +218,12 @@ int main(int argc, char **argv)
 		fatal("Could not start camera for streaming");
 
 	if (oneshot) {
-		run(camera, ab, debug);
+		run(camera, ab, debug, jpeg);
 		goto end;
 	}
 
 	while (!IS_STOPPED()) {
-		run(camera, ab, debug);
+		run(camera, ab, debug, jpeg);
 
 		/*
 		 * sleep(3) should not interfere with our signal handlers,

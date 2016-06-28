@@ -167,7 +167,7 @@ void appbase_enable_verbose(struct appbase *ab, bool enable)
 }
 
 bool appbase_push_frame(struct appbase *ab,
-		const char *data, size_t length,
+		const unsigned char *data, size_t length,
 		struct timeval *timestamp)
 {
 	CURLcode response_code;
