@@ -22,21 +22,18 @@ int stop;
 #define SHOULD_STOP(v) (stop = v)
 #define IS_STOPPED()   (stop)
 
-static char *create_unique_filename()
+static char *create_debug_filename()
 {
-	struct stat s;
 #define COUNT_LIMIT 9
-	unsigned int count = 0;
+	static unsigned int count = 0;
 	char filename_template[] = "picture";
 	size_t size = sizeof(filename_template) + 2;
 	char *filename = ec_malloc(size);
 
-	do {
-		snprintf(filename, size, "%s.%d", filename_template, count++);
-	} while (stat(filename, &s) >= 0 && count <= COUNT_LIMIT);
+	snprintf(filename, size, "%s.%d", filename_template, count++);
 
 	if (count > COUNT_LIMIT)
-		snprintf(filename, size, "%s.%d", filename_template, 0);
+		count = 0;
 
 	return filename;
 #undef COUNT_LIMIT
@@ -45,12 +42,13 @@ static char *create_unique_filename()
 static void write_to_disk(const char *data, size_t size)
 {
 	FILE *f;
-	char *filename = create_unique_filename();
+	char *filename = create_debug_filename();
 
 	f = fopen(filename, "w");
 	if (f) {
 		fwrite(data, size, 1, f);
 		fclose(f);
+		fprintf(stderr, "DEBUG: Frame written to file '%s'\n", filename);
 	}
 
 	free(filename);
