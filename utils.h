@@ -16,5 +16,6 @@
 void fatal(const char *message);
 void *ec_malloc(size_t size);
 void *ec_malloc_fill(size_t size, const char *data);
+void *ec_realloc(void *ptr, size_t size);
 
 #endif /* UTILS_H_ */
