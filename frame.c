@@ -93,4 +93,6 @@ void frame_convert_yuyv_to_jpeg(struct frame *f)
 		f->frame_size = jpeg_frame_len;
 		f->frame_bytes_used = jpeg_frame_len;
 	}
+
+	free(jpeg_frame);
 }
