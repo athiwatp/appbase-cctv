@@ -76,7 +76,7 @@ void frame_convert_yuyv_to_jpeg(struct frame *f)
 	unsigned char *jpeg_frame = NULL;
 	size_t jpeg_frame_len = 0;
 
-	if (!f || !f->frame_data || !f->frame_bytes_used || !f->frame_size)
+	if (!f || !f->frame_data || !f->frame_bytes_used || !f->frame_size || !f->width || !f->height)
 		return;
 
 	convert_to_jpeg(f->frame_data, f->frame_bytes_used,
