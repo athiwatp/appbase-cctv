@@ -142,12 +142,12 @@ static yajl_callbacks yajl_cbs = {
 		NULL
 };
 
-static void yajl_init(struct json_streamer *json, bool reinit)
+static void yajl_init(struct json_streamer *json, frame_cb fcb, bool reinit)
 {
 	struct json_streamer_state_ctx *ctx = ec_malloc(sizeof(struct json_streamer_state_ctx));
 
 	ctx->cur_state = waiting;
-	ctx->frame_callback = json->frame_callback;
+	ctx->frame_callback = fcb;
 
 	if (reinit) {
 		yajl_complete_parse(json->yajl);
@@ -169,7 +169,7 @@ struct json_streamer *json_streamer_init(frame_cb fcb)
 		goto fail;
 
 	json->frame_callback = fcb;
-	yajl_init(json, false);
+	yajl_init(json, fcb, false);
 
 	return json;
 
@@ -187,7 +187,7 @@ bool json_streamer_push(struct json_streamer *json, const unsigned char *data, s
 
 	status = yajl_parse(json->yajl, data, size);
 	if (status == yajl_status_client_canceled)
-		yajl_init(json, true);
+		yajl_init(json, json->frame_callback, true);
 
 	return (status != yajl_status_error);
 }
