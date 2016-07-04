@@ -11,10 +11,15 @@
 #include "appbase.h"
 
 struct json_streamer;
-struct json_streamer *json_streamer_init(frame_cb);
+
+typedef void (* json_streamer_frame_cb_t) (const char *, size_t, void *);
+struct json_streamer *json_streamer_init(json_streamer_frame_cb_t, void *);
+void json_streamer_destroy(struct json_streamer *);
+
 bool json_streamer_push(struct json_streamer *json,
 		const unsigned char *data,
 		size_t size);
+
 unsigned char *json_streamer_get_last_error(struct json_streamer *json,
 		unsigned char *data,
 		size_t size);

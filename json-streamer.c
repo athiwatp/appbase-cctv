@@ -6,15 +6,16 @@
  */
 #include <yajl/yajl_parse.h>
 #include <yajl/yajl_gen.h>
-#include <modp_b64.h>
 #include <string.h>
 #include "main.h"
 #include "utils.h"
 #include "appbase.h"
+#include "json-streamer.h"
 
 struct json_streamer {
 	yajl_handle yajl;
-	frame_cb frame_callback;
+	json_streamer_frame_cb_t frame_callback;
+	void *userdata;
 };
 
 enum json_streamer_state {
@@ -28,40 +29,19 @@ enum json_streamer_state {
 };
 
 struct json_streamer_state_ctx {
-	frame_cb frame_callback;
+	json_streamer_frame_cb_t frame_callback;
+	void *userdata;
 	enum json_streamer_state cur_state;
 	char *data;
 	size_t len;
 	long long val;
 };
 
-static void json_streamer_post_image_data(frame_cb frame_callback, const char *data, size_t len)
-{
-	struct frame f;
-
-	size_t image_len = modp_b64_decode_len(len);
-	char *image = ec_malloc(image_len);
-	f.frame_size = image_len;
-
-	image_len = modp_b64_decode(image, data, len);
-	f.frame_data = (unsigned char *) image;
-	f.frame_bytes_used = image_len;
-
-	if (image_len != -1) {
-		frame_callback(&f);
-//		fprintf(stderr, "Image decoded (b64 len: %d, decoded len: %d)\n", len, image_len);
-	} else {
-//		fprintf(stderr, "ERROR decoding image\n");
-	}
-
-	free(image);
-}
-
 /*
  * yajl callbacks
  *
  * Return non-zero to let the parsing continue.
- * Return zero to signal an error.
+ * Return zero to signal an error (yajl_parse() will return 'yajl_status_client_canceled').
  */
 static int json_streamer_new_state(struct json_streamer_state_ctx *state_ctx,
 		enum json_streamer_state new_state)
@@ -71,7 +51,7 @@ static int json_streamer_new_state(struct json_streamer_state_ctx *state_ctx,
 	switch (new_state) {
 	case string_parsed:
 		if (state_ctx->cur_state == image_key_waiting) {
-			json_streamer_post_image_data(state_ctx->frame_callback, state_ctx->data, state_ctx->len);
+			state_ctx->frame_callback(state_ctx->data, state_ctx->len, state_ctx->userdata);
 			state_ctx->cur_state = waiting;
 		}
 		break;
@@ -142,12 +122,13 @@ static yajl_callbacks yajl_cbs = {
 		NULL
 };
 
-static void yajl_init(struct json_streamer *json, frame_cb fcb, bool reinit)
+static void yajl_init(struct json_streamer *json, json_streamer_frame_cb_t fcb, void *userdata, bool reinit)
 {
 	struct json_streamer_state_ctx *ctx = ec_malloc(sizeof(struct json_streamer_state_ctx));
 
 	ctx->cur_state = waiting;
 	ctx->frame_callback = fcb;
+	ctx->userdata = userdata;
 
 	if (reinit) {
 		yajl_complete_parse(json->yajl);
@@ -160,7 +141,7 @@ static void yajl_init(struct json_streamer *json, frame_cb fcb, bool reinit)
 /*
  * JSON Streamer public API
  */
-struct json_streamer *json_streamer_init(frame_cb fcb)
+struct json_streamer *json_streamer_init(json_streamer_frame_cb_t fcb, void *userdata)
 {
 
 	struct json_streamer *json = ec_malloc(sizeof(struct json_streamer));
@@ -169,13 +150,24 @@ struct json_streamer *json_streamer_init(frame_cb fcb)
 		goto fail;
 
 	json->frame_callback = fcb;
-	yajl_init(json, fcb, false);
+	json->userdata = userdata;
+	yajl_init(json, fcb, userdata, false);
 
 	return json;
 
 fail:
 	free(json);
 	return NULL;
+}
+
+void json_streamer_destroy(struct json_streamer *json)
+{
+	if (json) {
+		if (json->yajl)
+			yajl_free(json->yajl);
+
+		free(json);
+	}
 }
 
 bool json_streamer_push(struct json_streamer *json, const unsigned char *data, size_t size)
@@ -187,7 +179,7 @@ bool json_streamer_push(struct json_streamer *json, const unsigned char *data, s
 
 	status = yajl_parse(json->yajl, data, size);
 	if (status == yajl_status_client_canceled)
-		yajl_init(json, json->frame_callback, true);
+		yajl_init(json, json->frame_callback, json->userdata, true);
 
 	return (status != yajl_status_error);
 }

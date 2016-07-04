@@ -11,14 +11,13 @@
 #include "main.h"
 #include "frame.h"
 
-struct window_internal;
-struct window {
-	bool (*render) (struct frame *);
-	bool (*is_closed) ();
-	struct window_internal *internal;
-};
+struct window;
 
 struct window *start_window(size_t width, size_t height, int format);
 void destroy_window(struct window *);
+
+bool window_render_frame(struct window *, struct frame *);
+
+bool window_is_closed();
 
 #endif /* WINDOW_H_ */

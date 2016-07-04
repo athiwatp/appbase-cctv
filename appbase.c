@@ -13,6 +13,8 @@
 #include "main.h"
 #include "utils.h"
 #include "frame.h"
+#include "json-streamer.h"
+#include "appbase.h"
 
 #define APPBASE_API_URL "scalr.api.appbase.io"
 #define APPBASE_PATH	"pic/1"
@@ -49,10 +51,28 @@ fatal:
 	return NULL;
 }
 
+/*
+ * I know field 'json' is const char*. It could be char* as well.
+ * But we're using the same pointer both to read and to write,
+ * and so I prefer to keep it const and let the compiler warn me
+ * when I write data when I should only read it (because that signals
+ * poor coding practice, and I'm probably clobbering something important),
+ * and tell it explicitly that I know it will go well when writing.
+ *
+ * So in 'reader_cb', we make sure we only read.
+ * In 'writer_cb' we make explicit casting to (char *) to skip
+ * compiler warnings.
+ *
+ * I've seen tricks such as this: http://stackoverflow.com/questions/8836418/is-const-casting-via-a-union-undefined-behaviour
+ * But don't seem to make much difference in practice.
+ */
 struct json_internal {
 	const char *json;
 	size_t length;
 	off_t offset;
+	struct json_streamer *json_streamer;
+	appbase_frame_cb_t frame_callback;
+	void *userdata;
 };
 
 /*
@@ -87,14 +107,66 @@ static size_t reader_cb(char *buffer, size_t size, size_t nitems, void *instream
 }
 
 /*
- * Writer callback for libcurl. This is just a sink to prevent libcurl from printing
+ * Writer callback for libcurl. Serves two purposes.
+ *
+ * When 'userdata' == NULL, this is just a sink to prevent libcurl from printing
  * data received from the server on screen (when debug mode is disabled). We just set
- * CURLOPT_WRITEFUNCTION to this function, so that data to be written will be passed to us
- * instead.
+ * CURLOPT_WRITEFUNCTION to this function, so that data to be written will be passed
+ * to us instead. This is handled by appbase_push_frame().
+ *
+ * When 'userdata' != NULL, then it should be a struct json_internal. This means cURL
+ * issued a GET request, and 'ptr' holds the response body of the server, which we should
+ * store into the json_internal struct. This is handled by appbase_fill_frame().
  */
-static size_t writer_cb(char *ptr, size_t size, size_t nmemb, void *userdada)
+static size_t writer_cb(unsigned char *ptr, size_t size, size_t nmemb, void *userdata)
 {
-	return size * nmemb;
+	struct json_internal *json = NULL;
+	size_t ttl_size = size * nmemb;
+	unsigned char *err = NULL;
+
+	if (!userdata || !ttl_size || !ptr)
+		goto end;
+
+	json = (struct json_internal *) userdata;
+	if (!json_streamer_push(json->json_streamer, ptr, ttl_size)) {
+		err = json_streamer_get_last_error(json->json_streamer, ptr, ttl_size);
+		fprintf(stderr, "JSON ERROR: %s\n", err);
+		json_streamer_free_last_error(json->json_streamer, err);
+	}
+
+end:
+	return ttl_size;
+}
+
+static void frame_callback(const char *frame_data, size_t len, void *userdata)
+{
+	size_t image_len;
+	char *image;
+	struct json_internal *json = userdata;
+
+	if (!json)
+		return;
+
+	if (frame_data && len) {
+		/* 'image' should be freed by the client */
+		image_len = modp_b64_decode_len(len);
+		image = ec_malloc(image_len);
+		image_len = modp_b64_decode(image, frame_data, len);
+
+		if (image_len != -1)
+			json->frame_callback(image, image_len, json->userdata);
+
+		/* Success! */
+		return;
+	}
+
+	/*
+	 * Failure
+	 * If image decoding failed, call frame_callback() with a NULL argument,
+	 * to let the client know about the error.
+	 */
+	json->frame_callback(NULL, 0, json->userdata);
+
 }
 
 void appbase_close(struct appbase *ab)
@@ -116,9 +188,7 @@ void appbase_close(struct appbase *ab)
 }
 
 /*
- * TODO
- * Socket creation and connection should also be handled here.
- * libcurl might open and close an entirely new connection for every PUT, which we don't want.
+ * libcurl keeps the socket open when possible
  */
 struct appbase *appbase_open(const char *app_name,
 		const char *username, const char *password,
@@ -135,6 +205,7 @@ struct appbase *appbase_open(const char *app_name,
 	curl_easy_setopt(ab->curl, CURLOPT_VERBOSE, 0L);
 	curl_easy_setopt(ab->curl, CURLOPT_NOPROGRESS, 1L);
 	curl_easy_setopt(ab->curl, CURLOPT_WRITEFUNCTION, writer_cb);
+	curl_easy_setopt(ab->curl, CURLOPT_WRITEDATA, NULL);
 
 	ab->url = appbase_generate_url(app_name, username, password, enable_streaming);
 	if (!ab->url)
@@ -163,6 +234,7 @@ void appbase_enable_verbose(struct appbase *ab, bool enable)
 	if (ab && ab->curl && (enable == 0 || enable == 1)) {
 		curl_easy_setopt(ab->curl, CURLOPT_VERBOSE, enable);
 		curl_easy_setopt(ab->curl, CURLOPT_WRITEFUNCTION, fwrite);
+		curl_easy_setopt(ab->curl, CURLOPT_WRITEDATA, stderr);
 	}
 }
 
@@ -181,7 +253,7 @@ bool appbase_push_frame(struct appbase *ab,
 	/* Transform raw frame data into base64 */
 	b64_size = modp_b64_encode_len(length);
 	b64_data = ec_malloc(b64_size);
-	if (modp_b64_encode(b64_data, data, length) == -1)
+	if (modp_b64_encode(b64_data, (char *) data, length) == -1)
 		return false;
 
 	/*
@@ -193,9 +265,9 @@ bool appbase_push_frame(struct appbase *ab,
 	 * 		"usec": "<milliseconds>"
 	 * 	}
 	 */
-	json_object_object_add(ab->json, "image", json_object_new_string(b64_data));
-	json_object_object_add(ab->json, "sec", json_object_new_int64(timestamp->tv_sec));
-	json_object_object_add(ab->json, "usec", json_object_new_int64(timestamp->tv_usec));
+	json_object_object_add(ab->json, AB_KEY_IMAGE, json_object_new_string(b64_data));
+	json_object_object_add(ab->json, AB_KEY_SEC, json_object_new_int64(timestamp->tv_sec));
+	json_object_object_add(ab->json, AB_KEY_USEC, json_object_new_int64(timestamp->tv_usec));
 
 	json.json = json_object_to_json_string_ext(ab->json, JSON_C_TO_STRING_PLAIN);
 	json.length = strlen(json.json);
@@ -222,18 +294,37 @@ bool appbase_push_frame(struct appbase *ab,
 	return (response_code == CURLE_OK);
 }
 
-/* TODO implement this */
-bool appbase_fill_frame(struct appbase *ab, struct frame *f)
+bool appbase_stream_loop(struct appbase *ab, appbase_frame_cb_t fcb, void *userdata)
 {
 	CURLcode response_code;
+	struct json_internal json_response;
 
-	if (!ab || !f || !f->frame_data || !f->frame_size)
+	if (!ab || !ab->curl || !fcb)
+		return false;
+
+	json_response.json = NULL;
+	json_response.length = 0;
+	json_response.offset = 0;
+	json_response.frame_callback = fcb;
+	json_response.userdata = userdata;
+	json_response.json_streamer = json_streamer_init(frame_callback, &json_response);
+
+	if (!json_response.json_streamer)
 		return false;
 
 	curl_easy_setopt(ab->curl, CURLOPT_URL, ab->url);
 	curl_easy_setopt(ab->curl, CURLOPT_HTTPGET, 1L);
+	curl_easy_setopt(ab->curl, CURLOPT_WRITEFUNCTION, writer_cb);
+	curl_easy_setopt(ab->curl, CURLOPT_WRITEDATA, &json_response);
 
+	/*
+	 * Here, curl_easy_perform() should block until the remote host closes the connection,
+	 * or we call curl_easy_cleanup() (this happens in appbase_close()).
+	 */
 	response_code = curl_easy_perform(ab->curl);
+
+	/* Clean up */
+	json_streamer_destroy(json_response.json_streamer);
 
 	return (response_code == CURLE_OK);
 }

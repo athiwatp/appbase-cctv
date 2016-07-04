@@ -7,11 +7,17 @@
 #include <linux/videodev2.h>
 #include <stdio.h>
 #include <getopt.h>
+#include <pthread.h>
 #include "main.h"
 #include "utils.h"
 #include "appbase.h"
 #include "uvc.h"
 #include "window.h"
+#include "cb.h"
+
+#define CB_LEN 5
+
+static struct appbase *ab = NULL;
 
 static void print_usage(const char *name)
 {
@@ -23,13 +29,40 @@ static void print_usage(const char *name)
 	}
 }
 
+/* TODO implement this
+ * Should render frame in SDL window.
+ * Frame 'f' might be NULL. This means that a frame was retrieved from Appbase,
+ * but that we were unable to decode it.
+ */
+static void frame_callback(const char *data, size_t len, void *userdata)
+{
+//	struct window *w = userdata;
+	struct cb *cb = userdata;
+	if (data && len && cb) {
+		/* 'data' will be freed in the main thread */
+		cb_append(cb, data, len);
+		fprintf(stderr, "Image decoded (decoded len: %d)\n", len);
+	} else {
+		fprintf(stderr, "ERROR decoding image\n");
+	}
+}
+
+static void *thread_loop(void *ptr)
+{
+	if (!appbase_stream_loop(ab, frame_callback, ptr))
+		fprintf(stderr, "ERROR: Could not stream from Appbase\n");
+	return NULL;
+}
+
 int main(int argc, char **argv)
 {
 	int opt;
 	bool debug = false;
-	struct appbase *ab;
-	struct frame *frame;
 	struct window *window;
+	struct frame frame;
+	struct cb *cb;
+	pthread_t thread;
+	pthread_attr_t thread_attr;
 
 	opt = getopt(argc, argv, "d");
 	if (opt != -1 && opt == 'd')
@@ -53,22 +86,29 @@ int main(int argc, char **argv)
 		appbase_enable_verbose(ab, true);
 	}
 
-	frame = uvc_alloc_frame(320, 240, V4L2_PIX_FMT_YUYV);
-	if (!frame)
-		fatal("Could not allocate frame");
-
+	cb = cb_start(CB_LEN);
 	window = start_window(320, 240, V4L2_PIX_FMT_YUYV);
-	while (!window->is_closed()) {
-		if (!appbase_fill_frame(ab, frame))
-			fatal("Could not read frame");
-		if (!window->render(frame))
-			fatal("Could not render frame");
-	}
-	destroy_window(window);
-	window = NULL;
 
-	uvc_free_frame(frame);
+	/*
+	 * Run the Appbase loop in a separate thread.
+	 * In the main thread, we wait until the user closes the window.
+	 */
+	pthread_attr_init(&thread_attr);
+	pthread_attr_setdetachstate(&thread_attr, PTHREAD_CREATE_DETACHED);
+	pthread_create(&thread, &thread_attr, thread_loop, (void *) cb);
+
+	while (!window_is_closed()) {
+		if (cb_try_next(cb, (const char **) &frame.frame_data, &frame.frame_bytes_used)) {
+			window_render_frame(window, &frame);
+			free(frame.frame_data);
+		}
+	}
+
 	appbase_close(ab);
+
+	destroy_window(window);
+	cb_destroy(cb);
+
 	goto exit;
 
 exit_help:
