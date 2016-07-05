@@ -58,17 +58,25 @@ int main(int argc, char **argv)
 {
 	int opt;
 	bool debug = false;
+	enum frame_format format = FRAME_FORMAT_YUYV;
 	struct window *window;
 	struct frame frame;
 	struct cb *cb;
 	pthread_t thread;
 	pthread_attr_t thread_attr;
 
-	opt = getopt(argc, argv, "d");
-	if (opt != -1 && opt == 'd')
-		debug = true;
-	else if (opt != -1)
-		goto exit_help;
+	while ((opt = getopt(argc, argv, "dj")) != -1) {
+		switch (opt) {
+		case 'd':
+			debug = true;
+			break;
+		case 'j':
+			format = FRAME_FORMAT_JPEG;
+			break;
+		default:
+			goto exit_help;
+		}
+	}
 
 	if (argc - optind < 3)
 		goto exit_help;
@@ -87,7 +95,7 @@ int main(int argc, char **argv)
 	}
 
 	cb = cb_start(CB_LEN);
-	window = start_window(320, 240, V4L2_PIX_FMT_YUYV);
+	window = start_window(320, 240, format);
 
 	/*
 	 * Run the Appbase loop in a separate thread.

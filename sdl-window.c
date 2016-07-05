@@ -17,20 +17,64 @@
 #define WINDOW_TITLE "Appbase CCTV (by ajuaristi)"
 
 struct window {
+	enum frame_format format;
 	SDL_Window *window;
 	SDL_Renderer *renderer;
 	SDL_Texture *texture;
 };
 
+static void sdl_render(SDL_Renderer *r, SDL_Texture *t)
+{
+	SDL_RenderClear(r);
+	SDL_RenderCopy(r, t, NULL, NULL);
+	SDL_RenderPresent(r);
+}
+
+static bool sdl_render_jpeg(struct window *w, const char *data, size_t len)
+{
+	SDL_Surface *s;
+	SDL_Texture *t;
+	SDL_RWops *ops = SDL_RWFromConstMem(data, len);
+
+	if (!ops)
+		goto fail;
+
+	s = IMG_LoadJPG_RW(ops);
+	if (!s)
+		goto fail;
+
+	t = SDL_CreateTextureFromSurface(w->renderer, s);
+	if (!t)
+		goto fail;
+	SDL_FreeSurface(s);
+
+	sdl_render(w->renderer, t);
+
+	SDL_DestroyTexture(t);
+	SDL_FreeRW(ops);
+	return true;
+
+fail:
+	if (s)
+		SDL_FreeSurface(s);
+	if (ops)
+		SDL_FreeRW(ops);
+	return false;
+}
+
 static void sdl_close(struct window *w)
 {
-	if (w->window)
-		SDL_DestroyWindow(w->window);
-	if (w->renderer)
-		SDL_DestroyRenderer(w->renderer);
-	if (w->texture)
-		SDL_DestroyTexture(w->texture);
-	SDL_Quit();
+	if (w) {
+		if (w->window)
+			SDL_DestroyWindow(w->window);
+		if (w->renderer)
+			SDL_DestroyRenderer(w->renderer);
+		if (w->texture)
+			SDL_DestroyTexture(w->texture);
+		if (w->format == FRAME_FORMAT_JPEG)
+			IMG_Quit();
+		SDL_Quit();
+	}
 }
 
 bool window_is_closed()
@@ -38,7 +82,7 @@ bool window_is_closed()
 	return SDL_QuitRequested();
 }
 
-struct window *start_window(size_t width, size_t height, int format)
+struct window *start_window(size_t width, size_t height, enum frame_format format)
 {
 //	Uint32 sdl_pixelformat;
 	struct window *w = ec_malloc(sizeof(struct window));
@@ -46,13 +90,15 @@ struct window *start_window(size_t width, size_t height, int format)
 	/*
 	 * SDL_CreateWindow() expects signed int values for width and height
 	 * whereas we're using unsigned size_t values throughout the code.
-	 * For the format, we also only support YUYV for now.
 	 */
-	if (width == 0 || height == 0 || width > INT_MAX || height > INT_MAX || format != V4L2_PIX_FMT_YUYV)
+	if (width == 0 || height == 0 || width > INT_MAX || height > INT_MAX || !FRAME_FORMAT_IS_SUPPORTED(format))
 		goto fail;
-//	sdl_pixelformat = SDL_PIXELFORMAT_YUY2;
+	w->format = format;
 
 	if (SDL_Init(SDL_INIT_VIDEO) != 0)
+		goto fail;
+	if (format == FRAME_FORMAT_JPEG &&
+			((IMG_Init(IMG_INIT_JPG) & IMG_INIT_JPG) != IMG_INIT_JPG))
 		goto fail;
 
 	w->window = SDL_CreateWindow(WINDOW_TITLE,
@@ -68,15 +114,16 @@ struct window *start_window(size_t width, size_t height, int format)
 	if (!w->renderer)
 		goto fail_uninitialize;
 
-//	wi->texture = SDL_CreateTexture(wi->renderer, sdl_pixelformat,
-//			SDL_TEXTUREACCESS_STREAMING,
-//			(int) width,
-//			(int) height);
-//	if (!wi->texture)
-//		goto fail_uninitialize;
-
-//	w->render = sdl_render;
-//	w->is_closed = sdl_is_closed;
+	w->texture = NULL;
+	if (format == FRAME_FORMAT_YUYV) {
+		w->texture = SDL_CreateTexture(w->renderer,
+				SDL_PIXELFORMAT_YUY2,
+				SDL_TEXTUREACCESS_STREAMING,
+				(int) width,
+				(int) height);
+		if (!w->texture)
+			goto fail_uninitialize;
+	}
 
 	return w;
 
@@ -88,23 +135,38 @@ fail:
 	return NULL;
 }
 
-/* TODO implement this */
 bool window_render_frame(struct window *w, struct frame *f)
 {
-	SDL_Surface *s = IMG_Load("picture.0.jpg");
-	if (!s || !w)
-		return false;
+	bool result = false;
 
-	w->texture = SDL_CreateTextureFromSurface(w->renderer, s);
-	SDL_FreeSurface(s);
-	if (!w->texture)
-		return false;
+	if (!w || !f || !f->frame_data || !f->frame_bytes_used)
+		goto end;
 
-	SDL_RenderClear(w->renderer);
-	SDL_RenderCopy(w->renderer, w->texture, NULL, NULL);
-	SDL_RenderPresent(w->renderer);
+	switch (w->format) {
+	case FRAME_FORMAT_YUYV:
+		/* TODO implement this */
+		break;
+	case FRAME_FORMAT_JPEG:
+		result = sdl_render_jpeg(w, (const char *) f->frame_data, f->frame_bytes_used);
+		break;
+	default:
+		break;
+	}
+//	SDL_Surface *s = IMG_Load("picture.0.jpg");
+//	if (!s || !w)
+//		return false;
+//
+//	w->texture = SDL_CreateTextureFromSurface(w->renderer, s);
+//	SDL_FreeSurface(s);
+//	if (!w->texture)
+//		return false;
+//
+//	SDL_RenderClear(w->renderer);
+//	SDL_RenderCopy(w->renderer, w->texture, NULL, NULL);
+//	SDL_RenderPresent(w->renderer);
 
-	return true;
+end:
+	return result;
 }
 
 void destroy_window(struct window *w)

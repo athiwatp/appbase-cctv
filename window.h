@@ -13,7 +13,7 @@
 
 struct window;
 
-struct window *start_window(size_t width, size_t height, int format);
+struct window *start_window(size_t width, size_t height, enum frame_format format);
 void destroy_window(struct window *);
 
 bool window_render_frame(struct window *, struct frame *);

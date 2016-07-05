@@ -9,6 +9,15 @@
 #define FRAME_H_
 #include <time.h>
 
+enum frame_format {
+	FRAME_FORMAT_FIRST,
+	FRAME_FORMAT_YUYV,
+	FRAME_FORMAT_YUY2 = FRAME_FORMAT_YUYV,
+	FRAME_FORMAT_JPEG,
+	FRAME_FORMAT_COUNT
+};
+#define FRAME_FORMAT_IS_SUPPORTED(f) (f > FRAME_FORMAT_FIRST && f < FRAME_FORMAT_COUNT)
+
 struct frame {
 	size_t frame_size;
 	size_t frame_bytes_used;
