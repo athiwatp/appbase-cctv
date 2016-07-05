@@ -41,7 +41,7 @@ static void frame_callback(const char *data, size_t len, void *userdata)
 	if (data && len && cb) {
 		/* 'data' will be freed in the main thread */
 		cb_append(cb, data, len);
-		fprintf(stderr, "Image decoded (decoded len: %d)\n", len);
+		fprintf(stderr, "Image decoded (decoded len: %ld)\n", len);
 	} else {
 		fprintf(stderr, "ERROR decoding image\n");
 	}
@@ -64,6 +64,9 @@ int main(int argc, char **argv)
 	struct cb *cb;
 	pthread_t thread;
 	pthread_attr_t thread_attr;
+
+	frame.width = DEFAULT_WIDTH;
+	frame.height = DEFAULT_HEIGHT;
 
 	while ((opt = getopt(argc, argv, "dj")) != -1) {
 		switch (opt) {
@@ -95,7 +98,7 @@ int main(int argc, char **argv)
 	}
 
 	cb = cb_start(CB_LEN);
-	window = start_window(320, 240, format);
+	window = start_window(frame.width, frame.height, format);
 
 	/*
 	 * Run the Appbase loop in a separate thread.
@@ -107,7 +110,8 @@ int main(int argc, char **argv)
 
 	while (!window_is_closed()) {
 		if (cb_try_next(cb, (const char **) &frame.frame_data, &frame.frame_bytes_used)) {
-			window_render_frame(window, &frame);
+			if (!window_render_frame(window, &frame))
+				fprintf(stderr, "ERROR: Could not render frame\n");
 			free(frame.frame_data);
 		}
 	}

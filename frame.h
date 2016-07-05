@@ -18,6 +18,9 @@ enum frame_format {
 };
 #define FRAME_FORMAT_IS_SUPPORTED(f) (f > FRAME_FORMAT_FIRST && f < FRAME_FORMAT_COUNT)
 
+#define DEFAULT_WIDTH	320
+#define DEFAULT_HEIGHT	240
+
 struct frame {
 	size_t frame_size;
 	size_t frame_bytes_used;

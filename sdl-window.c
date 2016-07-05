@@ -23,11 +23,32 @@ struct window {
 	SDL_Texture *texture;
 };
 
-static void sdl_render(SDL_Renderer *r, SDL_Texture *t)
+static void sdl_render_from_texture(SDL_Renderer *r, SDL_Texture *t)
 {
 	SDL_RenderClear(r);
 	SDL_RenderCopy(r, t, NULL, NULL);
 	SDL_RenderPresent(r);
+}
+
+static bool sdl_render_yuyv(struct window *w, const struct frame *f)
+{
+	unsigned int bpp = SDL_BYTESPERPIXEL(SDL_PIXELFORMAT_YUY2);
+
+	/*
+	 * Check to prevent read overrun, since SDL_UpdateTexture()
+	 * does not take length as an argument (although we've
+	 * already specified texture width and height in SDL_CreateTexture()).
+	 */
+	if (f->width * f->height * bpp > f->frame_bytes_used)
+		return false;
+
+	SDL_UpdateTexture(w->texture,
+			NULL,
+			f->frame_data,
+			f->width * bpp);
+	sdl_render_from_texture(w->renderer, w->texture);
+
+	return true;
 }
 
 static bool sdl_render_jpeg(struct window *w, const char *data, size_t len)
@@ -48,7 +69,7 @@ static bool sdl_render_jpeg(struct window *w, const char *data, size_t len)
 		goto fail;
 	SDL_FreeSurface(s);
 
-	sdl_render(w->renderer, t);
+	sdl_render_from_texture(w->renderer, t);
 
 	SDL_DestroyTexture(t);
 	SDL_FreeRW(ops);
@@ -84,7 +105,6 @@ bool window_is_closed()
 
 struct window *start_window(size_t width, size_t height, enum frame_format format)
 {
-//	Uint32 sdl_pixelformat;
 	struct window *w = ec_malloc(sizeof(struct window));
 
 	/*
@@ -144,7 +164,7 @@ bool window_render_frame(struct window *w, struct frame *f)
 
 	switch (w->format) {
 	case FRAME_FORMAT_YUYV:
-		/* TODO implement this */
+		result = sdl_render_yuyv(w, f);
 		break;
 	case FRAME_FORMAT_JPEG:
 		result = sdl_render_jpeg(w, (const char *) f->frame_data, f->frame_bytes_used);
@@ -152,18 +172,6 @@ bool window_render_frame(struct window *w, struct frame *f)
 	default:
 		break;
 	}
-//	SDL_Surface *s = IMG_Load("picture.0.jpg");
-//	if (!s || !w)
-//		return false;
-//
-//	w->texture = SDL_CreateTextureFromSurface(w->renderer, s);
-//	SDL_FreeSurface(s);
-//	if (!w->texture)
-//		return false;
-//
-//	SDL_RenderClear(w->renderer);
-//	SDL_RenderCopy(w->renderer, w->texture, NULL, NULL);
-//	SDL_RenderPresent(w->renderer);
 
 end:
 	return result;
