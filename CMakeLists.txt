@@ -8,8 +8,15 @@ set(CMAKE_C_FLAGS_DEBUG "-g")
 set(library-srcs appbase.c uvc.c frame.c utils.c json-streamer.c cb.c)
 add_library(appbase-common SHARED ${library-srcs})
 
+set(libraries "json-c" "modpbase64" "jpeg" "yajl" "SDL2_image" "pthread")
+if(NOT DEFINED HTTP_CLIENT OR HTTP_CLIENT STREQUAL "curl")
+  message(STATUS "Using HTTP client: libcurl")
+  set(libraries "${libraries};curl")
+  add_definitions(-DUSING_LIBCURL)
+endif()
+
 target_compile_definitions(appbase-common PUBLIC "_GNU_SOURCE=1")
-target_link_libraries(appbase-common "curl" "json-c" "modpbase64" "jpeg" "yajl" "SDL2_image" "pthread")
+target_link_libraries(appbase-common ${libraries})
 
 # Daemon #
 set(daemon-srcs daemon-main.c)

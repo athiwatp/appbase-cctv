@@ -4,7 +4,9 @@
  *  Created on: 31 May 2016
  *      Author: ajuaristi <a@juaristi.eus>
  */
+#ifdef USING_LIBCURL
 #include <curl/curl.h>
+#endif
 #include <json-c/json_object.h>
 #include <modp_b64.h>
 #include <stdio.h>
@@ -21,7 +23,9 @@
 
 struct appbase {
 	char *url;
+#ifdef USING_LIBCURL
 	CURL *curl;
+#endif
 	json_object *json;
 };
 
@@ -75,6 +79,7 @@ struct json_internal {
 	void *userdata;
 };
 
+#ifdef USING_LIBCURL
 /*
  * Callback for libcurl. This should fill 'buffer' with the data we want to send
  * and return the actual number of bytes written.
@@ -137,6 +142,7 @@ static size_t writer_cb(unsigned char *ptr, size_t size, size_t nmemb, void *use
 end:
 	return ttl_size;
 }
+#endif
 
 static void frame_callback(const char *frame_data, size_t len, void *userdata)
 {
@@ -172,14 +178,16 @@ static void frame_callback(const char *frame_data, size_t len, void *userdata)
 void appbase_close(struct appbase *ab)
 {
 	if (ab) {
+#ifdef USING_LIBCURL
 		if (ab->curl)
 			curl_easy_cleanup(ab->curl);
+		ab->curl = NULL;
+#endif
 		if (ab->url)
 			free(ab->url);
 		if (ab->json)
 			json_object_put(ab->json);
 
-		ab->curl = NULL;
 		ab->url = NULL;
 		ab->json = NULL;
 
@@ -197,6 +205,7 @@ struct appbase *appbase_open(const char *app_name,
 	struct appbase *ab =
 			ec_malloc(sizeof(struct appbase));
 
+#ifdef USING_LIBCURL
  	/* Initialize libcurl, and set up our Appbase REST URL */
 	ab->curl = curl_easy_init();
 	if (!ab->curl)
@@ -206,6 +215,7 @@ struct appbase *appbase_open(const char *app_name,
 	curl_easy_setopt(ab->curl, CURLOPT_NOPROGRESS, 1L);
 	curl_easy_setopt(ab->curl, CURLOPT_WRITEFUNCTION, writer_cb);
 	curl_easy_setopt(ab->curl, CURLOPT_WRITEDATA, NULL);
+#endif
 
 	ab->url = appbase_generate_url(app_name, username, password, enable_streaming);
 	if (!ab->url)
@@ -225,17 +235,21 @@ fatal:
 
 void appbase_enable_progress(struct appbase *ab, bool enable)
 {
+#ifdef USING_LIBCURL
 	if (ab && ab->curl && (enable == 0 || enable == 1))
 		curl_easy_setopt(ab->curl, CURLOPT_NOPROGRESS, !enable);
+#endif
 }
 
 void appbase_enable_verbose(struct appbase *ab, bool enable)
 {
+#ifdef USING_LIBCURL
 	if (ab && ab->curl && (enable == 0 || enable == 1)) {
 		curl_easy_setopt(ab->curl, CURLOPT_VERBOSE, enable);
 		curl_easy_setopt(ab->curl, CURLOPT_WRITEFUNCTION, fwrite);
 		curl_easy_setopt(ab->curl, CURLOPT_WRITEDATA, stderr);
 	}
+#endif
 }
 
 bool appbase_push_frame(struct appbase *ab,
@@ -247,7 +261,11 @@ bool appbase_push_frame(struct appbase *ab,
 	size_t b64_size = 0;
 	char *b64_data;
 
-	if (!ab || !ab->curl || !ab->url || !ab->json || !data || !length || !timestamp)
+	if (!ab ||
+#ifdef USING_LIBCURL
+			!ab->curl ||
+#endif
+			!ab->url || !ab->json || !data || !length || !timestamp)
 		return false;
 
 	/* Transform raw frame data into base64 */
@@ -273,6 +291,7 @@ bool appbase_push_frame(struct appbase *ab,
 	json.length = strlen(json.json);
 	json.offset = 0;
 
+#ifdef USING_LIBCURL
 	curl_easy_setopt(ab->curl, CURLOPT_URL, ab->url);
 	curl_easy_setopt(ab->curl, CURLOPT_UPLOAD, 1L);
 	curl_easy_setopt(ab->curl, CURLOPT_INFILESIZE, json.length);
@@ -280,6 +299,7 @@ bool appbase_push_frame(struct appbase *ab,
 	curl_easy_setopt(ab->curl, CURLOPT_READFUNCTION, reader_cb);
 
 	response_code = curl_easy_perform(ab->curl);
+#endif
 
 	/*
 	 * No need to free the JSON string.
@@ -299,7 +319,11 @@ bool appbase_stream_loop(struct appbase *ab, appbase_frame_cb_t fcb, void *userd
 	CURLcode response_code;
 	struct json_internal json_response;
 
-	if (!ab || !ab->curl || !fcb)
+	if (!ab ||
+#ifdef USING_LIBCURL
+			!ab->curl ||
+#endif
+			!fcb)
 		return false;
 
 	json_response.json = NULL;
@@ -312,6 +336,7 @@ bool appbase_stream_loop(struct appbase *ab, appbase_frame_cb_t fcb, void *userd
 	if (!json_response.json_streamer)
 		return false;
 
+#ifdef USING_LIBCURL
 	curl_easy_setopt(ab->curl, CURLOPT_URL, ab->url);
 	curl_easy_setopt(ab->curl, CURLOPT_HTTPGET, 1L);
 	curl_easy_setopt(ab->curl, CURLOPT_WRITEFUNCTION, writer_cb);
@@ -322,6 +347,7 @@ bool appbase_stream_loop(struct appbase *ab, appbase_frame_cb_t fcb, void *userd
 	 * or we call curl_easy_cleanup() (this happens in appbase_close()).
 	 */
 	response_code = curl_easy_perform(ab->curl);
+#endif
 
 	/* Clean up */
 	json_streamer_destroy(json_response.json_streamer);
