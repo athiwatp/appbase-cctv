@@ -213,7 +213,7 @@ void uvc_free_frame(struct frame *f)
 	}
 }
 
-bool uvc_start(struct camera *c)
+bool uvc_init(struct camera *c)
 {
 	if (!c || !c->internal || !c->frame || c->frame->format != V4L2_PIX_FMT_YUYV)
 		goto fail;

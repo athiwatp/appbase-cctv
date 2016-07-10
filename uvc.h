@@ -24,8 +24,11 @@ struct camera *uvc_open();
 
 struct frame *uvc_alloc_frame(size_t width, size_t height, int format);
 void uvc_free_frame(struct frame *);
-bool uvc_start(struct camera *);
+
+bool uvc_init(struct camera *);
+
 bool uvc_capture_frame(struct camera *);
+
 void uvc_close(struct camera *);
 
 #endif /* UVC_H_ */
