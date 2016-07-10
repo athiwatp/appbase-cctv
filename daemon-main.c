@@ -102,25 +102,81 @@ static void sighandler(int s)
 	SHOULD_STOP(1);
 }
 
-static void run(struct camera *camera, struct appbase *ab, bool debug, bool jpeg)
+static void do_stream(struct appbase *ab, bool jpeg)
 {
-	struct frame *f;
-	if (uvc_capture_frame(camera)) {
-		f = camera->frame;
+	struct camera *c;
+
+	c = uvc_open();
+	if (!c)
+		fatal("Could not find any camera for capturing pictures");
+
+	c->frame = uvc_alloc_frame(320, 240, V4L2_PIX_FMT_YUYV);
+	if (!c->frame)
+		fatal("Could not allocate enough memory for frames");
+
+	if (!uvc_init(c))
+		fatal("Could not start camera for streaming");
+
+	while (!IS_STOPPED() && uvc_capture_frame(c)) {
 		if (jpeg)
-			frame_convert_yuyv_to_jpeg(f);
+			frame_convert_yuyv_to_jpeg(c->frame);
 		if (!appbase_push_frame(ab,
-				f->frame_data, f->frame_bytes_used,
-				&f->capture_time))
-			fprintf(stderr, "ERROR: Could not send frame\n");
+				c->frame->frame_data, c->frame->frame_bytes_used,
+				&c->frame->capture_time)) {
+			fprintf(stderr, "ERROR: Could not capture frame\n");
+			break;
+		}
 
-		if (debug)
-			write_to_disk(f->frame_data, f->frame_bytes_used);
+		c->frame->frame_bytes_used = 0;
+	}
 
-		memset(f->frame_data, 0, f->frame_size);
-		f->frame_bytes_used = 0;
-	} else {
-		fprintf(stderr, "ERROR: Could not capture frame\n");
+	uvc_close(c);
+}
+
+void do_capture(struct appbase *ab, unsigned int wait_time, bool oneshot, bool jpeg, bool debug)
+{
+	struct camera *c;
+	struct frame *f;
+
+	while (!IS_STOPPED()) {
+		c = uvc_open();
+		if (!c)
+			fatal("Could not find any camera for capturing pictures");
+
+		c->frame = uvc_alloc_frame(320, 240, V4L2_PIX_FMT_YUYV);
+		if (!c->frame)
+			fatal("Could not allocate enough memory for frames");
+
+		if (!uvc_init(c))
+			fatal("Could not start camera for streaming");
+
+		if (uvc_capture_frame(c)) {
+			f = c->frame;
+			if (jpeg)
+				frame_convert_yuyv_to_jpeg(f);
+			if (!appbase_push_frame(ab,
+					f->frame_data, f->frame_bytes_used,
+					&f->capture_time))
+				fprintf(stderr, "ERROR: Could not send frame\n");
+
+			if (debug)
+				write_to_disk(f->frame_data, f->frame_bytes_used);
+
+			memset(f->frame_data, 0, f->frame_size);
+			f->frame_bytes_used = 0;
+		} else {
+			fprintf(stderr, "ERROR: Could not capture frame\n");
+		}
+
+		uvc_close(c);
+
+		if (oneshot)
+			break;
+		/*
+		 * sleep(3) should not interfere with our signal handlers,
+		 * unless we're also handling SIGALRM
+		 */
+		sleep(wait_time);
 	}
 
 }
@@ -130,13 +186,12 @@ int main(int argc, char **argv)
 	int opt;
 	char *endptr;
 	long int wait_time = DEFAULT_WAIT_TIME;
-	bool debug = false, oneshot = false, jpeg = false;
+	bool debug = false, oneshot = false, stream = false, jpeg = false;
 	struct sigaction sig;
 	struct appbase *ab;
-	struct camera *camera;
 
 	/* Parse command-line options */
-	while ((opt = getopt(argc, argv, "w:dsj")) != -1) {
+	while ((opt = getopt(argc, argv, "w:dsSj")) != -1) {
 		switch (opt) {
 		case 'w':
 			wait_time = strtol(optarg, &endptr, 10);
@@ -148,6 +203,9 @@ int main(int argc, char **argv)
 			break;
 		case 's':
 			oneshot = true;
+			break;
+		case 'S':
+			stream = true;
 			break;
 		case 'j':
 			jpeg = true;
@@ -193,47 +251,11 @@ int main(int argc, char **argv)
 		appbase_enable_verbose(ab, true);
 	}
 
-	camera = uvc_open();
-	if (!camera)
-		fatal("Could not find any camera for capturing pictures");
+	if (stream)
+		do_stream(ab, jpeg);
+	else
+		do_capture(ab, wait_time, oneshot, jpeg, debug);
 
-	/*
-	 * We'll capture 320x240 images in YUYV format. YUYV encodes each pixel in 2 bytes,
-	 * so the size of the frames will be 320 x 240 x 2 = 153,600 bytes (~153 KB).
-	 * All the frames will have exactly the same size (unless we, at some point, change
-	 * the dimensions or the format), so we can allocate a fixed chunk of memory and re-use it
-	 * for each frame.
-	 *
-	 * Frame format:
-	 * +-------------+----------+-------------+----------+
-	 * |    Byte 0   |  Byte 1  |    Byte 2   |  Byte 3  |
-	 * +-------------+----------+-------------+----------+
-	 * | Y (pixel 0) | U (both) | Y (pixel 1) | V (both) |
-	 * +-------------+----------+-------------+----------+
-	 */
-	camera->frame = uvc_alloc_frame(320, 240, V4L2_PIX_FMT_YUYV);
-	if (!camera->frame)
-		fatal("Could not allocate enough memory for frames");
-	if (!uvc_start(camera))
-		fatal("Could not start camera for streaming");
-
-	if (oneshot) {
-		run(camera, ab, debug, jpeg);
-		goto end;
-	}
-
-	while (!IS_STOPPED()) {
-		run(camera, ab, debug, jpeg);
-
-		/*
-		 * sleep(3) should not interfere with our signal handlers,
-		 * unless we're also handling SIGALRM
-		 */
-		sleep(wait_time);
-	}
-
-end:
-	uvc_close(camera);
 	appbase_close(ab);
 
 	return 0;
