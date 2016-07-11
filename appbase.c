@@ -6,6 +6,8 @@
  */
 #ifdef USING_LIBCURL
 #include <curl/curl.h>
+#elif USING_LIBWGET
+#include <libwget.h>
 #endif
 #include <json-c/json_object.h>
 #include <modp_b64.h>
@@ -110,6 +112,7 @@ static size_t reader_cb(char *buffer, size_t size, size_t nitems, void *instream
 
 	return should_write;
 }
+#endif
 
 /*
  * Writer callback for libcurl. Serves two purposes.
@@ -123,18 +126,38 @@ static size_t reader_cb(char *buffer, size_t size, size_t nitems, void *instream
  * issued a GET request, and 'ptr' holds the response body of the server, which we should
  * store into the json_internal struct. This is handled by appbase_fill_frame().
  */
-static size_t writer_cb(unsigned char *ptr, size_t size, size_t nmemb, void *userdata)
+static size_t writer_cb(
+#ifdef USING_LIBCURL
+		unsigned char *ptr, size_t size, size_t nmemb, void *context
+#elif USING_LIBWGET
+		void *context, const char *data, size_t len
+#endif
+		)
 {
 	struct json_internal *json = NULL;
-	size_t ttl_size = size * nmemb;
+	size_t ttl_size =
+#ifdef USING_LIBCURL
+			size * nmemb
+#elif USING_LIBWGET
+			len
+#endif
+			;
 	unsigned char *err = NULL;
+	void *userdata = context;
+	unsigned char *data =
+#ifdef USING_LIBCURL
+			ptr
+#elif USING_LIBWGET
+			(unsigned char *) data
+#endif
+			;
 
-	if (!userdata || !ttl_size || !ptr)
+	if (!userdata || !ttl_size || !data)
 		goto end;
 
 	json = (struct json_internal *) userdata;
-	if (!json_streamer_push(json->json_streamer, ptr, ttl_size)) {
-		err = json_streamer_get_last_error(json->json_streamer, ptr, ttl_size);
+	if (!json_streamer_push(json->json_streamer, data, ttl_size)) {
+		err = json_streamer_get_last_error(json->json_streamer, data, ttl_size);
 		fprintf(stderr, "JSON ERROR: %s\n", err);
 		json_streamer_free_last_error(json->json_streamer, err);
 	}
@@ -142,7 +165,7 @@ static size_t writer_cb(unsigned char *ptr, size_t size, size_t nmemb, void *use
 end:
 	return ttl_size;
 }
-#endif
+
 
 static void frame_callback(const char *frame_data, size_t len, void *userdata)
 {
@@ -215,6 +238,8 @@ struct appbase *appbase_open(const char *app_name,
 	curl_easy_setopt(ab->curl, CURLOPT_NOPROGRESS, 1L);
 	curl_easy_setopt(ab->curl, CURLOPT_WRITEFUNCTION, writer_cb);
 	curl_easy_setopt(ab->curl, CURLOPT_WRITEDATA, NULL);
+#elif USING_LIBWGET
+	wget_global_init(NULL);
 #endif
 
 	ab->url = appbase_generate_url(app_name, username, password, enable_streaming);
@@ -235,7 +260,10 @@ fatal:
 
 void appbase_enable_progress(struct appbase *ab, bool enable)
 {
-#ifdef USING_LIBCURL
+#ifdef USING_LIBWGET
+	/* Not supported by libwget */
+	return;
+#elif USING_LIBCURL
 	if (ab && ab->curl && (enable == 0 || enable == 1))
 		curl_easy_setopt(ab->curl, CURLOPT_NOPROGRESS, !enable);
 #endif
@@ -243,13 +271,19 @@ void appbase_enable_progress(struct appbase *ab, bool enable)
 
 void appbase_enable_verbose(struct appbase *ab, bool enable)
 {
+	if (ab && (enable == 0 || enable == 1)) {
 #ifdef USING_LIBCURL
-	if (ab && ab->curl && (enable == 0 || enable == 1)) {
-		curl_easy_setopt(ab->curl, CURLOPT_VERBOSE, enable);
-		curl_easy_setopt(ab->curl, CURLOPT_WRITEFUNCTION, fwrite);
-		curl_easy_setopt(ab->curl, CURLOPT_WRITEDATA, stderr);
-	}
+		if (ab->curl) {
+			curl_easy_setopt(ab->curl, CURLOPT_VERBOSE, enable);
+			curl_easy_setopt(ab->curl, CURLOPT_WRITEFUNCTION, fwrite);
+			curl_easy_setopt(ab->curl, CURLOPT_WRITEDATA, stderr);
+		}
+#elif USING_LIBWGET
+		wget_logger_set_stream(
+				wget_get_logger(WGET_LOGGER_DEBUG),
+				(enable ? stderr : NULL));
 #endif
+	}
 }
 
 bool appbase_push_frame(struct appbase *ab,
@@ -316,7 +350,11 @@ bool appbase_push_frame(struct appbase *ab,
 
 bool appbase_stream_loop(struct appbase *ab, appbase_frame_cb_t fcb, void *userdata)
 {
+#ifdef USING_LIBCURL
 	CURLcode response_code;
+#elif USING_LIBWGET
+	wget_http_response_t *resp;
+#endif
 	struct json_internal json_response;
 
 	if (!ab ||
@@ -347,10 +385,19 @@ bool appbase_stream_loop(struct appbase *ab, appbase_frame_cb_t fcb, void *userd
 	 * or we call curl_easy_cleanup() (this happens in appbase_close()).
 	 */
 	response_code = curl_easy_perform(ab->curl);
+#elif USING_LIBWGET
+	wget_response = wget_http_get(
+			WGET_HTTP_URL, ab->url,
+			WGET_HTTP_BODY_SAVEAS_FUNC, writer_cb,
+			NULL);
 #endif
 
 	/* Clean up */
 	json_streamer_destroy(json_response.json_streamer);
 
+#ifdef USING_LIBCURL
 	return (response_code == CURLE_OK);
+#elif USING_LIBWGET
+	return (wget_response->code == 200);
+#endif
 }
