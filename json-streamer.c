@@ -125,7 +125,10 @@ static yajl_callbacks yajl_cbs = {
 
 static void yajl_init(struct json_streamer *json, json_streamer_frame_cb_t fcb, void *userdata, bool reinit)
 {
-	struct json_streamer_state_ctx *ctx = ec_malloc(sizeof(struct json_streamer_state_ctx));
+	struct json_streamer_state_ctx *ctx = json->ctx;
+
+	if (!ctx)
+		ctx = ec_malloc(sizeof(struct json_streamer_state_ctx));
 
 	ctx->cur_state = waiting;
 	ctx->frame_callback = fcb;
@@ -155,6 +158,7 @@ struct json_streamer *json_streamer_init(json_streamer_frame_cb_t fcb, void *use
 
 	json->frame_callback = fcb;
 	json->userdata = userdata;
+	json->ctx = NULL;
 	yajl_init(json, fcb, userdata, false);
 
 	return json;
