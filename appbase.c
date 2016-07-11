@@ -155,11 +155,14 @@ static void frame_callback(const char *frame_data, size_t len, void *userdata)
 
 		if (image_len != -1)
 			json->frame_callback(image, image_len, json->userdata);
+		else
+			goto fail;
 
 		/* Success! */
 		return;
 	}
 
+fail:
 	/*
 	 * Failure
 	 * If image decoding failed, call frame_callback() with a NULL argument,

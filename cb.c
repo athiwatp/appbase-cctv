@@ -39,6 +39,15 @@ bool cb_try_next(struct cb *cb, const char **data, size_t *len)
 		*data = cb->buf[idx].data;
 		*len = cb->buf[idx].len;
 
+		/*
+		 * Now the client should take care of the bucket (ie. process and free).
+		 * Free up this position to avoid free-after-use conditions.
+		 * It is safe to just fill with zeros, because the semaphore will take care
+		 * to not get over the buffer's head.
+		 */
+		cb->buf[idx].data = NULL;
+		cb->buf[idx].len = 0;
+
 		cb->read++;
 		retval = true;
 	}
