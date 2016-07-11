@@ -16,6 +16,7 @@ struct json_streamer {
 	yajl_handle yajl;
 	json_streamer_frame_cb_t frame_callback;
 	void *userdata;
+	struct json_streamer_state_ctx *ctx;
 };
 
 enum json_streamer_state {
@@ -124,11 +125,17 @@ static yajl_callbacks yajl_cbs = {
 
 static void yajl_init(struct json_streamer *json, json_streamer_frame_cb_t fcb, void *userdata, bool reinit)
 {
-	struct json_streamer_state_ctx *ctx = ec_malloc(sizeof(struct json_streamer_state_ctx));
+	struct json_streamer_state_ctx *ctx = json->ctx;
+
+	if (!ctx)
+		ctx = ec_malloc(sizeof(struct json_streamer_state_ctx));
 
 	ctx->cur_state = waiting;
 	ctx->frame_callback = fcb;
 	ctx->userdata = userdata;
+
+	/* Save pointer so that we can free it later in json_streamer_destroy() */
+	json->ctx = ctx;
 
 	if (reinit) {
 		yajl_complete_parse(json->yajl);
@@ -151,6 +158,7 @@ struct json_streamer *json_streamer_init(json_streamer_frame_cb_t fcb, void *use
 
 	json->frame_callback = fcb;
 	json->userdata = userdata;
+	json->ctx = NULL;
 	yajl_init(json, fcb, userdata, false);
 
 	return json;
@@ -165,6 +173,8 @@ void json_streamer_destroy(struct json_streamer *json)
 	if (json) {
 		if (json->yajl)
 			yajl_free(json->yajl);
+		if (json->ctx)
+			free(json->ctx);
 
 		free(json);
 	}

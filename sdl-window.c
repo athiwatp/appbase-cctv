@@ -86,12 +86,12 @@ fail:
 static void sdl_close(struct window *w)
 {
 	if (w) {
-		if (w->window)
-			SDL_DestroyWindow(w->window);
-		if (w->renderer)
-			SDL_DestroyRenderer(w->renderer);
 		if (w->texture)
 			SDL_DestroyTexture(w->texture);
+		if (w->renderer)
+			SDL_DestroyRenderer(w->renderer);
+		if (w->window)
+			SDL_DestroyWindow(w->window);
 		if (w->format == FRAME_FORMAT_JPEG)
 			IMG_Quit();
 		SDL_Quit();
