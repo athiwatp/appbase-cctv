@@ -39,6 +39,7 @@ You would first run the client:
 Usage: ./appbase-cctv-client [OPTIONS] <app name> <username> <password>
 Options:
     -d    Display debug messages
+    -j    Decode images from JPEG
 ```
 It takes as arguments, your Appbase application name, username and password. So if your app is "myapp", your username is "foo", and your password is "bar", you would run:
 ```
@@ -53,6 +54,8 @@ Options:
     -w secs        Sleep this amount of seconds between shots
     -d             Display debug messages
     -s             Take one single shot and exit
+    -j             Convert frames to JPEG
+    -S             Stream as fast as possible
 ```
 Thus:
 ```

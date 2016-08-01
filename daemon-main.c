@@ -62,7 +62,9 @@ static void print_usage_and_exit(const char *name)
 				"Options:\n"
 				"    -w secs        Sleep this amount of seconds between shots\n"
 				"    -d             Display debug messages\n"
-				"    -s             Take one single shot and exit\n",
+				"    -s             Take one single shot and exit\n"
+				"    -j             Convert frames to JPEG\n"
+				"    -S             Stream as fast as possible\n",
 				name);
 	}
 	exit(1);

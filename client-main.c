@@ -24,7 +24,8 @@ static void print_usage(const char *name)
 	if (name) {
 		printf("Usage: %s [OPTIONS] <app name> <username> <password>\n"
 				"Options:\n"
-				"    -d    Display debug messages\n",
+				"    -d    Display debug messages\n"
+				"    -j    Decode images from JPEG\n",
 				name);
 	}
 }
