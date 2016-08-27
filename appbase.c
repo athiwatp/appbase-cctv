@@ -8,6 +8,7 @@
 #include <json-c/json_object.h>
 #include <modp_b64.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <malloc.h>
 #include <string.h>
 #include "main.h"
@@ -228,13 +229,13 @@ fatal:
 
 void appbase_enable_progress(struct appbase *ab, bool enable)
 {
-	if (ab && ab->curl && (enable == 0 || enable == 1))
+	if (ab && ab->curl)
 		curl_easy_setopt(ab->curl, CURLOPT_NOPROGRESS, !enable);
 }
 
 void appbase_enable_verbose(struct appbase *ab, bool enable)
 {
-	if (ab && ab->curl && (enable == 0 || enable == 1)) {
+	if (ab && ab->curl) {
 		curl_easy_setopt(ab->curl, CURLOPT_VERBOSE, enable);
 		curl_easy_setopt(ab->curl, CURLOPT_WRITEFUNCTION, fwrite);
 		curl_easy_setopt(ab->curl, CURLOPT_WRITEDATA, stderr);

@@ -19,12 +19,14 @@
 #  define bool _Bool
 #endif /* __cplusplus */
 
-#ifdef __cplusplus
-#  define true true
-#  define false false
-#else
-#  define true 1
-#  define false 0
+#if !defined(true) && !defined(false)
+#  ifdef __cplusplus
+#    define true true
+#    define false false
+#  else
+#    define true 1
+#    define false 0
+#  endif
 #endif
 
 #endif /* MAIN_H_ */
