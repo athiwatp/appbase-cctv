@@ -53,7 +53,7 @@ static bool sdl_render_yuyv(struct window *w, const struct frame *f)
 
 static bool sdl_render_jpeg(struct window *w, const char *data, size_t len)
 {
-	SDL_Surface *s;
+	SDL_Surface *s = NULL;
 	SDL_Texture *t;
 	SDL_RWops *ops = SDL_RWFromConstMem(data, len);
 
