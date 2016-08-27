@@ -15,15 +15,6 @@
 #else
 #  if !defined __GNUC__
 #    define _Bool signed char
-#  else
-#    if !HAVE__BOOL
-typedef enum {
-	_Bool_must_promote_to_int = -1,
-	false = 0,
-	true = 1
-} Bool;
-#define _Bool Bool
-#    endif /* !@HAVE_BOOL@ */
 #  endif /* __GNUC__ */
 #  define bool _Bool
 #endif /* __cplusplus */
