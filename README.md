@@ -27,7 +27,7 @@ Verify that a `Makefile` has been created, and then just run:
 ```
 make
 ```
-It should create two executables, namely `appbase-cctv-client` and `appbase-cctv-daemno`, and a shared library, `libappbase-common.so`. This library exports common functions used by both executables.
+It should create two executables, namely `appbase-cctv-client` and `appbase-cctv-daemon`, and a shared library, `libappbase-common.so`. This library exports common functions used by both executables.
 
 ### Run
 So the architecture is fairly simple. There are two pieces, a daemon and a client. Choosing appropriate names was tricky, since the daemon is also a client, strictly speaking.
