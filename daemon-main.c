@@ -6,16 +6,17 @@
  */
 #include <stdio.h>
 #include <signal.h>
-#include <getopt.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <linux/videodev2.h>
 #include <sys/stat.h>
 #include "utils.h"
+#include "config.h"
 #include "appbase.h"
 #include "uvc.h"
 
+#define CONFIG_FILE		".appbase-config"
 #define DEFAULT_WAIT_TIME	5
 
 int stop;
@@ -67,7 +68,7 @@ static void print_usage_and_exit(const char *name)
 				"    -S             Stream as fast as possible\n",
 				name);
 	}
-	exit(1);
+	exit(EXIT_FAILURE);
 }
 
 static void sighandler(int s)
@@ -185,38 +186,36 @@ void do_capture(struct appbase *ab, unsigned int wait_time, bool oneshot, bool j
 
 int main(int argc, char **argv)
 {
-	int opt;
-	char *endptr;
+	/* Config options */
 	long int wait_time = DEFAULT_WAIT_TIME;
 	bool debug = false, oneshot = false, stream = false, jpeg = false;
+	/* Error message in case a parsing error occurred */
+	char *error_msg;
+	/* Appbase credentials */
+	char *ab_app_name = NULL,
+			*ab_username = NULL,
+			*ab_password = NULL;
 	struct sigaction sig;
 	struct appbase *ab;
 
-	/* Parse command-line options */
-	while ((opt = getopt(argc, argv, "w:dsSj")) != -1) {
-		switch (opt) {
-		case 'w':
-			wait_time = strtol(optarg, &endptr, 10);
-			if (*endptr || wait_time < 0)
-				print_usage_and_exit(argv[0]);
-			break;
-		case 'd':
-			debug = true;
-			break;
-		case 's':
-			oneshot = true;
-			break;
-		case 'S':
-			stream = true;
-			break;
-		case 'j':
-			jpeg = true;
-			break;
-		default:
-			print_usage_and_exit(argv[0]);
-			break;
-		}
+	/* Read config options from file */
+	if (!read_from_file(CONFIG_FILE, &wait_time,
+			&debug, &oneshot, &stream, &jpeg,
+			&ab_app_name, &ab_username, &ab_password,
+			&error_msg)) {
+		fprintf(stderr, "ERROR: %s\n", error_msg);
+		free(error_msg);
+		exit(EXIT_FAILURE);
 	}
+
+	/*
+	 * Parse command-line options.
+	 * These should override those from the file.
+	 */
+	if (!read_from_cmdline(argc, argv, &wait_time,
+			&debug, &oneshot, &stream, &jpeg,
+			&ab_app_name, &ab_username, &ab_password))
+		print_usage_and_exit(argv[0]);
 
 	/* Set signal handlers and set stop condition to zero */
 	SHOULD_STOP(0);
@@ -233,17 +232,19 @@ int main(int argc, char **argv)
 	sigaction(SIGABRT, &sig, NULL);
 	sigaction(SIGTRAP, &sig, NULL);
 
-	/* Set up Appbase handle
+	/*
+	 * Set up Appbase handle.
 	 * We need the app name, username and password to build the REST URL, and these
-	 * should came now as parameters. We expect optind to point us to the first one.
+	 * should came now as parameters, if they weren't specified in the config file.
+	 * We expect optind to point us to the first one.
 	 */
-	if (argc - optind < 3)
+	if (!ab_app_name || !ab_username || !ab_password)
 		print_usage_and_exit(argv[0]);
 
 	ab = appbase_open(
-			argv[optind],		// app name
-			argv[optind + 1],	// username
-			argv[optind + 2],	// password
+			ab_app_name,		// app name
+			ab_username,		// username
+			ab_password,		// password
 			false);			// streaming off
 	if (!ab)
 		fatal("Could not log into Appbase");

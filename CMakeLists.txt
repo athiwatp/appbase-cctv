@@ -5,7 +5,7 @@ set(CMAKE_C_FLAGS "-std=c11 -Wall")
 set(CMAKE_C_FLAGS_DEBUG "-g")
 
 # Library with common functions #
-set(library-srcs appbase.c uvc.c frame.c utils.c json-streamer.c cb.c)
+set(library-srcs appbase.c uvc.c frame.c utils.c config.c json-streamer.c cb.c)
 add_library(appbase-common SHARED ${library-srcs})
 
 target_compile_definitions(appbase-common PUBLIC "_GNU_SOURCE=1")
